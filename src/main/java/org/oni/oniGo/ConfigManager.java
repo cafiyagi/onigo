@@ -22,7 +22,7 @@ public class ConfigManager {
     private Location escapeLocation;
     private Location initialSpawnLocation;
 
-    // 必要なチェストカウント数
+    // 必要なチェストカウント数（一人あたり）
     private int requiredCountChests = 3;
 
     public ConfigManager(OniGo plugin) {
@@ -134,7 +134,7 @@ public class ConfigManager {
             config.set("count_chests." + chestName + ".world", loc.getWorld().getName());
         }
 
-        // Save required count chest number
+        // Save required count chest number (per player)
         config.set("required_count_chests", requiredCountChests);
 
         // Save door location
@@ -241,45 +241,6 @@ public class ConfigManager {
     }
 
     /**
-     * Get number of opened count chests
-     */
-    public int getOpenedCountChestsCount() {
-        int count = 0;
-        for (boolean opened : countChestOpened.values()) {
-            if (opened) {
-                count++;
-            }
-        }
-        return count;
-    }
-
-    /**
-     * Get the total number of count chests
-     */
-    public int getTotalCountChests() {
-        return countChestLocations.size();
-    }
-
-    /**
-     * Check if enough count chests are opened to get the exit key
-     */
-    public boolean areEnoughCountChestsOpened() {
-        return getOpenedCountChestsCount() >= requiredCountChests;
-    }
-
-    /**
-     * Check if all count chests are opened
-     */
-    public boolean areAllCountChestsOpened() {
-        for (boolean opened : countChestOpened.values()) {
-            if (!opened) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    /**
      * Check if regular chest exists at location
      */
     public String getChestNameAtLocation(Location location) {
@@ -318,11 +279,32 @@ public class ConfigManager {
     }
 
     /**
-     * Set the required number of count chests
+     * Set the required number of count chests per player
      */
     public void setRequiredCountChests(int count) {
         requiredCountChests = count;
         saveConfig();
+    }
+
+    /**
+     * Get the total number of count chests
+     */
+    public int getTotalCountChests() {
+        return countChestLocations.size();
+    }
+
+    /**
+     * Get the total number of opened count chests
+     * This method is now only for backwards compatibility, as each player tracks their own chest count
+     */
+    public int getOpenedCountChestsCount() {
+        int count = 0;
+        for (boolean opened : countChestOpened.values()) {
+            if (opened) {
+                count++;
+            }
+        }
+        return count;
     }
 
     // Getters

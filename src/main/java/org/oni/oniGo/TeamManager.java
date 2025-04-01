@@ -11,6 +11,7 @@ import org.bukkit.scoreboard.Scoreboard;
 import org.bukkit.scoreboard.ScoreboardManager;
 import org.bukkit.scoreboard.Team;
 
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
@@ -166,68 +167,94 @@ public class TeamManager {
     }
 
     /**
-     * Update scoreboard display with count chest info
+     * Update scoreboard display with per-player count chest info and remaining chests
      */
     public void updateScoreboard(int remainingTime, Map<UUID, Integer> kakureDamaRemaining,
-                                 int openedCountChests, int requiredCountChests) {
-        // Clear existing entries
-        for (String entry : scoreboard.getEntries()) {
-            scoreboard.resetScores(entry);
-        }
-
-        // Display remaining time
-        Score timeScore = objective.getScore(ChatColor.YELLOW + "残り時間: " + remainingTime + "秒");
-        timeScore.setScore(9);
-
-        // Count survivors (players not in spectator mode)
-        int survivors = 0;
+                                 Map<UUID, Integer> playerOpenedCountChests,
+                                 Map<UUID, Integer> playerRequiredCountChests,
+                                 int remainingChests) {
+        // Apply different scoreboards for different teams
         for (Player p : Bukkit.getOnlinePlayers()) {
-            if (playerTeam.hasEntry(p.getName()) && p.getGameMode() != GameMode.SPECTATOR) {
-                survivors++;
+            Scoreboard playerScoreboard = scoreboard; // shared scoreboard reference
+            Objective playerObjective = objective;    // shared objective reference
+
+            // Clear existing entries for this player
+            for (String entry : playerScoreboard.getEntries()) {
+                playerScoreboard.resetScores(entry);
             }
-        }
-        Score survivorsScore = objective.getScore(ChatColor.GREEN + "生存者数: " + survivors + "人");
-        survivorsScore.setScore(8);
 
-        // Escaped players
-        Score escapedScore = objective.getScore(ChatColor.AQUA + "脱出者数: " + escapedPlayers.size() + "人");
-        escapedScore.setScore(7);
+            // Display remaining time
+            Score timeScore = playerObjective.getScore(ChatColor.YELLOW + "残り時間: " + remainingTime + "秒");
+            timeScore.setScore(12);
 
-        // Count chest progress
-        Score countChestScore = objective.getScore(ChatColor.GOLD + "カウントチェスト: " + openedCountChests + "/" + requiredCountChests);
-        countChestScore.setScore(6);
-
-        // Team counts
-        Score oniScore = objective.getScore(ChatColor.RED + "鬼: " + oniTeam.getSize() + "人");
-        oniScore.setScore(5);
-
-        Score playerScore = objective.getScore(ChatColor.BLUE + "プレイヤー: " + playerTeam.getSize() + "人");
-        playerScore.setScore(4);
-
-        // Show individual hiding orb times
-        int i = 3;
-        for (Player p : Bukkit.getOnlinePlayers()) {
-            if (playerTeam.hasEntry(p.getName())) {
-                int rem = kakureDamaRemaining.getOrDefault(p.getUniqueId(), 0);
-                Score kdScore = objective.getScore(ChatColor.AQUA + p.getName() + ": 隠れ玉 " + rem + "秒");
-                kdScore.setScore(i);
-                i--;
-                if (i < 0) break; // 表示制限
+            // Count survivors (players not in spectator mode)
+            int survivors = 0;
+            for (Player target : Bukkit.getOnlinePlayers()) {
+                if (playerTeam.hasEntry(target.getName()) && target.getGameMode() != GameMode.SPECTATOR) {
+                    survivors++;
+                }
             }
-        }
+            Score survivorsScore = playerObjective.getScore(ChatColor.GREEN + "生存者数: " + survivors + "人");
+            survivorsScore.setScore(11);
 
-        // Apply scoreboard to all players
-        for (Player p : Bukkit.getOnlinePlayers()) {
-            p.setScoreboard(scoreboard);
+            // Escaped players
+            Score escapedScore = playerObjective.getScore(ChatColor.AQUA + "脱出者数: " + escapedPlayers.size() + "人");
+            escapedScore.setScore(10);
+
+            // 残りチェスト数（プレイヤーチームのみ）
+            if (isPlayerInPlayerTeam(p) && !isPlayerInOniTeam(p)) {
+                Score remainingChestsScore = playerObjective.getScore(ChatColor.GOLD + "残りチェスト: " + remainingChests + "個");
+                remainingChestsScore.setScore(9);
+            }
+
+            // Special information only for player team
+            if (isPlayerInPlayerTeam(p) && !isPlayerInOniTeam(p)) {
+                // Individual player chest progress
+                UUID playerId = p.getUniqueId();
+                int opened = playerOpenedCountChests.getOrDefault(playerId, 0);
+                int required = playerRequiredCountChests.getOrDefault(playerId, 0);
+
+                Score countChestScore = playerObjective.getScore(ChatColor.GOLD + "カウントチェスト: " + opened + "/" + required);
+                countChestScore.setScore(8);
+
+                // Show individual hiding orb time
+                int rem = kakureDamaRemaining.getOrDefault(playerId, 0);
+                Score kdScore = playerObjective.getScore(ChatColor.AQUA + "隠れ玉: " + rem + "秒");
+                kdScore.setScore(7);
+            }
+
+            // Team counts for everyone
+            Score oniScore = playerObjective.getScore(ChatColor.RED + "鬼: " + oniTeam.getSize() + "人");
+            oniScore.setScore(6);
+
+            Score playerScore = playerObjective.getScore(ChatColor.BLUE + "プレイヤー: " + playerTeam.getSize() + "人");
+            playerScore.setScore(5);
+
+            // 勝利条件の説明
+            Score winConditionScore = playerObjective.getScore(ChatColor.LIGHT_PURPLE + "----------");
+            winConditionScore.setScore(4);
+
+            Score winCondition1 = playerObjective.getScore(ChatColor.WHITE + "・過半数脱出で勝利");
+            winCondition1.setScore(3);
+
+            Score winCondition2 = playerObjective.getScore(ChatColor.WHITE + "・(0,0,7)で勝利");
+            winCondition2.setScore(2);
+
+            Score winCondition3 = playerObjective.getScore(ChatColor.LIGHT_PURPLE + "----------");
+            winCondition3.setScore(1);
+
+            // Apply updated scoreboard to this player
+            p.setScoreboard(playerScoreboard);
         }
     }
 
     /**
-     * 古いupdateScoreboardメソッド（互換性のために残す）
+     * 互換性のためのオーバーロードメソッド
      */
-    public void updateScoreboard(int remainingTime, Map<UUID, Integer> kakureDamaRemaining) {
-        // デフォルトの値でカウントチェスト情報を追加
-        updateScoreboard(remainingTime, kakureDamaRemaining, 0, 0);
+    public void updateScoreboard(int remainingTime, Map<UUID, Integer> kakureDamaRemaining,
+                                 Map<UUID, Integer> playerOpenedCountChests,
+                                 Map<UUID, Integer> playerRequiredCountChests) {
+        updateScoreboard(remainingTime, kakureDamaRemaining, playerOpenedCountChests, playerRequiredCountChests, 0);
     }
 
     /**

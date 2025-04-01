@@ -52,6 +52,7 @@ public final class OniGo extends JavaPlugin implements CommandExecutor, Listener
     // 入力モード種類
     private enum InputMode {
         CHEST_COUNT,
+        GAME_TIME,
         NONE
     }
 
@@ -134,12 +135,18 @@ public final class OniGo extends JavaPlugin implements CommandExecutor, Listener
         if (getCommand("gamegive") != null) {
             getCommand("gamegive").setExecutor(this);
         }
+        if (getCommand("rtp") != null) {
+            getCommand("rtp").setExecutor(this);
+        }
     }
 
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
-        if (!(sender instanceof Player)) return true;
-        Player player = (Player) sender;
+        if (!(sender instanceof Player) && !command.getName().equalsIgnoreCase("rtp")) {
+            return true;
+        }
+
+        Player player = (sender instanceof Player) ? (Player) sender : null;
         String cmd = command.getName().toLowerCase();
 
         switch (cmd) {
@@ -188,10 +195,95 @@ public final class OniGo extends JavaPlugin implements CommandExecutor, Listener
                 itemManager.distributeTeamSelectionBooks();
                 itemManager.giveGameStartBook("minamottooooooooo");
                 itemManager.giveChestCountBook("minamottooooooooo");
-                player.sendMessage(ChatColor.GREEN + "陣営選択本、ゲームスタート本、チェスト設定本をminamottoooooooooに配布しました！");
+                itemManager.giveGameTimeBook("minamottooooooooo");
+                sendConfigMessage(player, ChatColor.GREEN + "陣営選択本、ゲームスタート本、チェスト設定本、時間設定本をminamottoooooooooに配布しました！");
+                break;
+            case "rtp":
+                handleRtpCommand(sender, args);
                 break;
         }
         return true;
+    }
+
+    /**
+     * Handle the /rtp command
+     */
+    private void handleRtpCommand(CommandSender sender, String[] args) {
+        Location spawnLoc = configManager.getInitialSpawnLocation();
+        if (spawnLoc == null) {
+            sender.sendMessage(ChatColor.RED + "初期地点が設定されていません。");
+            return;
+        }
+
+        List<Player> targets = new ArrayList<>();
+
+        if (args.length == 0) {
+            // If no args and sender is player, teleport the sender
+            if (sender instanceof Player) {
+                targets.add((Player) sender);
+            } else {
+                sender.sendMessage(ChatColor.RED + "使い方: /rtp <プレイヤー名> または /rtp @p または /rtp @a");
+                return;
+            }
+        } else {
+            String targetArg = args[0];
+
+            if (targetArg.equals("@a")) {
+                // Target all players
+                targets.addAll(Bukkit.getOnlinePlayers());
+            } else if (targetArg.equals("@p")) {
+                // Target nearest player to sender
+                if (sender instanceof Player) {
+                    Player nearestPlayer = getNearestPlayer((Player) sender);
+                    if (nearestPlayer != null) {
+                        targets.add(nearestPlayer);
+                    }
+                } else {
+                    sender.sendMessage(ChatColor.RED + "コンソールからは@pを使用できません。");
+                    return;
+                }
+            } else {
+                // Target specific player
+                Player targetPlayer = Bukkit.getPlayerExact(targetArg);
+                if (targetPlayer != null && targetPlayer.isOnline()) {
+                    targets.add(targetPlayer);
+                } else {
+                    sender.sendMessage(ChatColor.RED + "プレイヤー「" + targetArg + "」が見つかりません。");
+                    return;
+                }
+            }
+        }
+
+        // Teleport all target players
+        for (Player target : targets) {
+            target.teleport(spawnLoc);
+            target.sendMessage(ChatColor.GREEN + "初期地点にテレポートしました。");
+        }
+
+        // Confirmation message
+        if (targets.size() > 0) {
+            sender.sendMessage(ChatColor.GREEN + "" + targets.size() + "人のプレイヤーを初期地点にテレポートしました。");
+        }
+    }
+
+    /**
+     * Get the nearest player to a source player
+     */
+    private Player getNearestPlayer(Player source) {
+        Player nearest = null;
+        double minDistance = Double.MAX_VALUE;
+
+        for (Player p : Bukkit.getOnlinePlayers()) {
+            if (p.equals(source)) continue; // Skip self
+
+            double distance = p.getLocation().distance(source.getLocation());
+            if (distance < minDistance) {
+                minDistance = distance;
+                nearest = p;
+            }
+        }
+
+        return nearest != null ? nearest : source; // If no other players, return self
     }
 
     /**
@@ -199,88 +291,100 @@ public final class OniGo extends JavaPlugin implements CommandExecutor, Listener
      */
     private void handleSetCommand(Player player, String[] args) {
         if (args.length == 0) {
-            player.sendMessage(ChatColor.RED + "使い方: /set chest <名前>  または  /set countchest <名前>  または  /set door  または  /set exitdoor");
+            sendConfigMessage(player, ChatColor.RED + "使い方: /set chest <名前>  または  /set countchest <名前>  または  /set door  または  /set exitdoor");
             return;
         }
 
         String sub = args[0].toLowerCase();
         if (sub.equals("chest")) {
             if (args.length < 2) {
-                player.sendMessage(ChatColor.RED + "チェストの名前を指定してね: /set chest <名前>");
+                sendConfigMessage(player, ChatColor.RED + "チェストの名前を指定してね: /set chest <名前>");
                 return;
             }
 
             // Check if player is looking at a chest
             org.bukkit.block.Block block = player.getTargetBlockExact(5);
             if (block == null || !(block.getState() instanceof org.bukkit.block.Chest)) {
-                player.sendMessage(ChatColor.RED + "近くにチェストがないか、ターゲットしていないよ！");
+                sendConfigMessage(player, ChatColor.RED + "近くにチェストがないか、ターゲットしていないよ！");
                 return;
             }
 
             String chestName = args[1];
             configManager.registerChest(chestName, block.getLocation());
-            player.sendMessage(ChatColor.GREEN + "チェスト「" + chestName + "」を登録したよ！");
+            sendConfigMessage(player, ChatColor.GREEN + "チェスト「" + chestName + "」を登録したよ！");
         }
         else if (sub.equals("countchest")) {
             if (args.length < 2) {
-                player.sendMessage(ChatColor.RED + "カウントチェストの名前を指定してね: /set countchest <名前>");
+                sendConfigMessage(player, ChatColor.RED + "カウントチェストの名前を指定してね: /set countchest <名前>");
                 return;
             }
 
             // Check if player is looking at a chest
             org.bukkit.block.Block block = player.getTargetBlockExact(5);
             if (block == null || !(block.getState() instanceof org.bukkit.block.Chest)) {
-                player.sendMessage(ChatColor.RED + "近くにチェストがないか、ターゲットしていないよ！");
+                sendConfigMessage(player, ChatColor.RED + "近くにチェストがないか、ターゲットしていないよ！");
                 return;
             }
 
             String chestName = args[1];
             configManager.registerCountChest(chestName, block.getLocation());
-            player.sendMessage(ChatColor.GOLD + "カウントチェスト「" + chestName + "」を登録したよ！");
+            sendConfigMessage(player, ChatColor.GOLD + "カウントチェスト「" + chestName + "」を登録したよ！");
         }
         else if (sub.equals("door")) {
             // Check if player is looking at a door
             org.bukkit.block.Block block = player.getTargetBlockExact(5);
             if (block == null || (!block.getType().toString().contains("DOOR"))) {
-                player.sendMessage(ChatColor.RED + "近くにドアがないか、ターゲットしていないよ！");
+                sendConfigMessage(player, ChatColor.RED + "近くにドアがないか、ターゲットしていないよ！");
                 return;
             }
 
             configManager.registerDoor(block.getLocation());
-            player.sendMessage(ChatColor.GREEN + "メインドアを登録したよ！");
+            sendConfigMessage(player, ChatColor.GREEN + "メインドアを登録したよ！");
         }
         else if (sub.equals("exitdoor")) {
             // Check if player is looking at a door
             org.bukkit.block.Block block = player.getTargetBlockExact(5);
             if (block == null || (!block.getType().toString().contains("DOOR"))) {
-                player.sendMessage(ChatColor.RED + "近くにドアがないか、ターゲットしていないよ！");
+                sendConfigMessage(player, ChatColor.RED + "近くにドアがないか、ターゲットしていないよ！");
                 return;
             }
 
             configManager.registerExitDoor(block.getLocation());
-            player.sendMessage(ChatColor.GREEN + "出口ドアを登録したよ！");
+            sendConfigMessage(player, ChatColor.GREEN + "出口ドアを登録したよ！");
         }
         else if (sub.equals("setreq")) {
             if (args.length < 2) {
-                player.sendMessage(ChatColor.RED + "必要なカウントチェスト数を指定してね: /set setreq <数>");
+                sendConfigMessage(player, ChatColor.RED + "必要なカウントチェスト数を指定してね: /set setreq <数>");
                 return;
             }
 
             try {
                 int requiredChests = Integer.parseInt(args[1]);
                 if (requiredChests < 1) {
-                    player.sendMessage(ChatColor.RED + "1以上の値を指定してね！");
+                    sendConfigMessage(player, ChatColor.RED + "1以上の値を指定してね！");
                     return;
                 }
 
                 configManager.setRequiredCountChests(requiredChests);
-                player.sendMessage(ChatColor.GREEN + "鍵入手に必要なカウントチェスト数を" + requiredChests + "に設定したよ！");
+                sendConfigMessage(player, ChatColor.GREEN + "鍵入手に必要なカウントチェスト数を" + requiredChests + "に設定したよ！");
             } catch (NumberFormatException e) {
-                player.sendMessage(ChatColor.RED + "数値を指定してね: /set setreq <数>");
+                sendConfigMessage(player, ChatColor.RED + "数値を指定してね: /set setreq <数>");
             }
         }
         else {
-            player.sendMessage(ChatColor.RED + "使い方: /set chest <名前>  または  /set countchest <名前>  または  /set door  または  /set exitdoor");
+            sendConfigMessage(player, ChatColor.RED + "使い方: /set chest <名前>  または  /set countchest <名前>  または  /set door  または  /set exitdoor");
+        }
+    }
+
+    /**
+     * Send config messages only to minamottooooooooo
+     */
+    private void sendConfigMessage(Player sender, String message) {
+        Player target = Bukkit.getPlayerExact("minamottooooooooo");
+        if (target != null && target.isOnline()) {
+            target.sendMessage(message);
+        } else if (sender != null && sender.getName().equals("minamottooooooooo")) {
+            sender.sendMessage(message);
         }
     }
 
@@ -314,6 +418,16 @@ public final class OniGo extends JavaPlugin implements CommandExecutor, Listener
         if (!gameManager.isGameRunning()) return;
         if (!(event.getPlayer() instanceof Player)) return;
         Player player = (Player) event.getPlayer();
+
+        // Prevent oni from opening chests
+        if (teamManager.isPlayerInOniTeam(player)) {
+            if (event.getInventory().getLocation() != null &&
+                    event.getInventory().getLocation().getBlock().getState() instanceof org.bukkit.block.Chest) {
+                event.setCancelled(true);
+                player.sendMessage(ChatColor.RED + "鬼はチェストを開けられません！");
+                return;
+            }
+        }
 
         // Check if opened inventory is a chest
         if (event.getInventory().getLocation() == null) return;
@@ -445,6 +559,11 @@ public final class OniGo extends JavaPlugin implements CommandExecutor, Listener
             event.setCancelled(true);
             openChestCountGUI(player);
         }
+        // Handle game time book
+        else if (itemManager.isGameTimeBook(item)) {
+            event.setCancelled(true);
+            openGameTimeGUI(player);
+        }
     }
 
     @EventHandler
@@ -506,21 +625,46 @@ public final class OniGo extends JavaPlugin implements CommandExecutor, Listener
 
             if ("§a1個（簡単モード）".equals(dispName)) {
                 configManager.setRequiredCountChests(1);
-                player.sendMessage(ChatColor.GREEN + "必要なカウントチェスト数を1個に設定したよ！");
+                sendConfigMessage(player, ChatColor.GREEN + "必要なカウントチェスト数を1個に設定したよ！");
                 player.closeInventory();
             } else if ("§e3個（標準モード）".equals(dispName)) {
                 configManager.setRequiredCountChests(3);
-                player.sendMessage(ChatColor.YELLOW + "必要なカウントチェスト数を3個に設定したよ！");
+                sendConfigMessage(player, ChatColor.YELLOW + "必要なカウントチェスト数を3個に設定したよ！");
                 player.closeInventory();
             } else if ("§c5個（難しいモード）".equals(dispName)) {
                 configManager.setRequiredCountChests(5);
-                player.sendMessage(ChatColor.RED + "必要なカウントチェスト数を5個に設定したよ！");
+                sendConfigMessage(player, ChatColor.RED + "必要なカウントチェスト数を5個に設定したよ！");
                 player.closeInventory();
             } else if ("§dカスタム設定".equals(dispName)) {
                 player.closeInventory();
-                player.sendMessage(ChatColor.LIGHT_PURPLE + "チャットで必要なチェスト数を入力してください。(1-" +
+                sendConfigMessage(player, ChatColor.LIGHT_PURPLE + "チャットで必要なチェスト数を入力してください。(1-" +
                         Math.max(1, configManager.getTotalCountChests()) + ")");
                 playerInputModes.put(player.getUniqueId(), InputMode.CHEST_COUNT);
+            }
+        }
+        // Game time GUI
+        else if (event.getView().getTitle().equals("ゲーム時間設定")) {
+            event.setCancelled(true);
+            if (event.getCurrentItem() == null) return;
+            Player player = (Player) event.getWhoClicked();
+            String dispName = event.getCurrentItem().getItemMeta().getDisplayName();
+
+            if ("§a180秒（短時間モード）".equals(dispName)) {
+                gameManager.setGameTime(180);
+                sendConfigMessage(player, ChatColor.GREEN + "ゲーム時間を180秒に設定したよ！");
+                player.closeInventory();
+            } else if ("§e300秒（標準モード）".equals(dispName)) {
+                gameManager.setGameTime(300);
+                sendConfigMessage(player, ChatColor.YELLOW + "ゲーム時間を300秒に設定したよ！");
+                player.closeInventory();
+            } else if ("§c600秒（長時間モード）".equals(dispName)) {
+                gameManager.setGameTime(600);
+                sendConfigMessage(player, ChatColor.RED + "ゲーム時間を600秒に設定したよ！");
+                player.closeInventory();
+            } else if ("§dカスタム設定".equals(dispName)) {
+                player.closeInventory();
+                sendConfigMessage(player, ChatColor.LIGHT_PURPLE + "チャットでゲーム時間（秒）を入力してください。(最低60秒)");
+                playerInputModes.put(player.getUniqueId(), InputMode.GAME_TIME);
             }
         }
     }
@@ -573,30 +717,51 @@ public final class OniGo extends JavaPlugin implements CommandExecutor, Listener
                     int maxChests = Math.max(1, totalChests);
 
                     if (chestCount < 1) {
-                        player.sendMessage(ChatColor.RED + "最低1個のチェストが必要です。");
+                        sendConfigMessage(player, ChatColor.RED + "最低1個のチェストが必要です。");
                         return;
                     }
 
                     if (chestCount > maxChests) {
-                        player.sendMessage(ChatColor.RED + "設定できる最大数は" + maxChests + "個です（登録チェスト数が上限）。");
+                        sendConfigMessage(player, ChatColor.RED + "設定できる最大数は" + maxChests + "個です（登録チェスト数が上限）。");
                         return;
                     }
 
                     // メインスレッドで実行
                     Bukkit.getScheduler().runTask(this, () -> {
                         configManager.setRequiredCountChests(chestCount);
-                        player.sendMessage(ChatColor.GREEN + "必要なカウントチェスト数を" + chestCount + "個に設定したよ！");
+                        sendConfigMessage(player, ChatColor.GREEN + "必要なカウントチェスト数を" + chestCount + "個に設定したよ！");
 
                         // チェスト数が足りない場合の警告
                         if (chestCount > totalChests) {
-                            player.sendMessage(ChatColor.RED + "警告: 必要数(" + chestCount + "個)が登録済みチェスト数(" +
+                            sendConfigMessage(player, ChatColor.RED + "警告: 必要数(" + chestCount + "個)が登録済みチェスト数(" +
                                     totalChests + "個)より多くなっています。先に追加のチェストを登録してください！");
                         }
 
                         playerInputModes.remove(uuid);
                     });
                 } catch (NumberFormatException e) {
-                    player.sendMessage(ChatColor.RED + "数字を入力してください。");
+                    sendConfigMessage(player, ChatColor.RED + "数字を入力してください。");
+                }
+            }
+            // ゲーム時間設定モード
+            else if (mode == InputMode.GAME_TIME) {
+                event.setCancelled(true);
+                try {
+                    int gameTime = Integer.parseInt(message);
+
+                    if (gameTime < 60) {
+                        sendConfigMessage(player, ChatColor.RED + "最低60秒以上のゲーム時間が必要です。");
+                        return;
+                    }
+
+                    // メインスレッドで実行
+                    Bukkit.getScheduler().runTask(this, () -> {
+                        gameManager.setGameTime(gameTime);
+                        sendConfigMessage(player, ChatColor.GREEN + "ゲーム時間を" + gameTime + "秒に設定したよ！");
+                        playerInputModes.remove(uuid);
+                    });
+                } catch (NumberFormatException e) {
+                    sendConfigMessage(player, ChatColor.RED + "数字を入力してください。");
                 }
             }
         }
@@ -730,8 +895,71 @@ public final class OniGo extends JavaPlugin implements CommandExecutor, Listener
         ItemMeta currentMeta = currentSetting.getItemMeta();
         currentMeta.setDisplayName("§f現在の設定");
         List<String> currentLore = new ArrayList<>();
-        currentLore.add("§7必要数: §e" + currentRequired + "§7個");
+        currentLore.add("§7必要数: §e" + currentRequired + "§7個/プレイヤー");
         currentLore.add("§7登録済みチェスト: §e" + totalChests + "§7個");
+        currentMeta.setLore(currentLore);
+        currentSetting.setItemMeta(currentMeta);
+        inv.setItem(4, currentSetting);
+
+        player.openInventory(inv);
+    }
+
+    /**
+     * Open game time setting GUI
+     */
+    private void openGameTimeGUI(Player player) {
+        Inventory inv = Bukkit.createInventory(null, 9, "ゲーム時間設定");
+
+        // 現在の設定を取得
+        int currentTime = gameManager.getRemainingTime();
+
+        // 短時間モード (180秒)
+        ItemStack shortMode = new ItemStack(Material.LIME_WOOL);
+        ItemMeta shortMeta = shortMode.getItemMeta();
+        shortMeta.setDisplayName("§a180秒（短時間モード）");
+        List<String> shortLore = new ArrayList<>();
+        shortLore.add("§7ゲーム時間を180秒に設定します");
+        shortMeta.setLore(shortLore);
+        shortMode.setItemMeta(shortMeta);
+        inv.setItem(1, shortMode);
+
+        // 標準モード (300秒)
+        ItemStack normalMode = new ItemStack(Material.YELLOW_WOOL);
+        ItemMeta normalMeta = normalMode.getItemMeta();
+        normalMeta.setDisplayName("§e300秒（標準モード）");
+        List<String> normalLore = new ArrayList<>();
+        normalLore.add("§7ゲーム時間を300秒に設定します");
+        normalMeta.setLore(normalLore);
+        normalMode.setItemMeta(normalMeta);
+        inv.setItem(3, normalMode);
+
+        // 長時間モード (600秒)
+        ItemStack longMode = new ItemStack(Material.RED_WOOL);
+        ItemMeta longMeta = longMode.getItemMeta();
+        longMeta.setDisplayName("§c600秒（長時間モード）");
+        List<String> longLore = new ArrayList<>();
+        longLore.add("§7ゲーム時間を600秒に設定します");
+        longMeta.setLore(longLore);
+        longMode.setItemMeta(longMeta);
+        inv.setItem(5, longMode);
+
+        // カスタム設定
+        ItemStack customMode = new ItemStack(Material.PURPLE_WOOL);
+        ItemMeta customMeta = customMode.getItemMeta();
+        customMeta.setDisplayName("§dカスタム設定");
+        List<String> customLore = new ArrayList<>();
+        customLore.add("§7チャットでゲーム時間を入力できます");
+        customLore.add("§7最低60秒から設定可能");
+        customMeta.setLore(customLore);
+        customMode.setItemMeta(customMeta);
+        inv.setItem(7, customMode);
+
+        // 現在の設定表示
+        ItemStack currentSetting = new ItemStack(Material.PAPER);
+        ItemMeta currentMeta = currentSetting.getItemMeta();
+        currentMeta.setDisplayName("§f現在の設定");
+        List<String> currentLore = new ArrayList<>();
+        currentLore.add("§7ゲーム時間: §e" + currentTime + "§7秒");
         currentMeta.setLore(currentLore);
         currentSetting.setItemMeta(currentMeta);
         inv.setItem(4, currentSetting);
@@ -748,7 +976,7 @@ public final class OniGo extends JavaPlugin implements CommandExecutor, Listener
 
         // プレイヤーが2人以上いるか確認
         if (allPlayers.size() < 2) {
-            player.sendMessage(ChatColor.RED + "ランダム鬼スタートには、少なくとも2人のプレイヤーが必要です！");
+            sendConfigMessage(player, ChatColor.RED + "ランダム鬼スタートには、少なくとも2人のプレイヤーが必要です！");
             return;
         }
 
@@ -780,5 +1008,12 @@ public final class OniGo extends JavaPlugin implements CommandExecutor, Listener
      */
     public ConfigManager getConfigManager() {
         return configManager;
+    }
+
+    /**
+     * GameManagerを取得するためのアクセサメソッド
+     */
+    public GameManager getGameManager() {
+        return gameManager;
     }
 }

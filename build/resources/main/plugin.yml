@@ -1,6 +1,6 @@
 name: OniGo
 main: org.oni.oniGo.OniGo
-version: 1.5
+version: 1.6
 commands:
   yasha:
     description: 夜叉効果を開始する
@@ -32,3 +32,6 @@ commands:
   gamegive:
     description: 陣営選択本を全プレイヤーに配布し、ゲームスタート本を特定のプレイヤーに配布する
     usage: /gamegive
+  rtp:
+    description: 初期スポーン地点にテレポートする(@p @a対応)
+    usage: /rtp [プレイヤー名/@p/@a]

@@ -8,11 +8,22 @@ import org.bukkit.inventory.meta.BookMeta;
 import org.bukkit.inventory.meta.ItemMeta;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.UUID;
 
 public class ItemManager {
     private final OniGo plugin;
     private final TeamManager teamManager;
+
+    // 鬼アイテムのクールダウン管理
+    private Map<UUID, Long> chestDetectorCooldowns = new HashMap<>();
+    private Map<UUID, Long> chestTeleporterCooldowns = new HashMap<>();
+
+    // クールダウン時間（ミリ秒）
+    private static final long DETECTOR_COOLDOWN_MS = 60000; // 60秒
+    private static final long TELEPORTER_COOLDOWN_MS = 120000; // 120秒
 
     public ItemManager(OniGo plugin, TeamManager teamManager) {
         this.plugin = plugin;
@@ -31,6 +42,13 @@ public class ItemManager {
         ItemStack kakureDama = createKakureDamaItem();
         player.getInventory().addItem(kakureDama);
 
+        // 新しい鬼アイテム
+        ItemStack chestDetector = createChestDetectorItem();
+        player.getInventory().addItem(chestDetector);
+
+        ItemStack chestTeleporter = createChestTeleporterItem();
+        player.getInventory().addItem(chestTeleporter);
+
         // Give team selection book
         ItemStack teamBook = createTeamSelectBook();
         player.getInventory().addItem(teamBook);
@@ -42,6 +60,10 @@ public class ItemManager {
         // Give chest count book
         ItemStack chestCountBook = createChestCountBook();
         player.getInventory().addItem(chestCountBook);
+
+        // Give game time book
+        ItemStack timeBook = createGameTimeBook();
+        player.getInventory().addItem(timeBook);
 
         // Give exit key (for testing)
         ItemStack exitKey = createExitKeyItem();
@@ -83,6 +105,17 @@ public class ItemManager {
     }
 
     /**
+     * Give game time book to a specific player
+     */
+    public void giveGameTimeBook(String playerName) {
+        Player player = plugin.getServer().getPlayer(playerName);
+        if (player != null && player.isOnline()) {
+            ItemStack timeBook = createGameTimeBook();
+            player.getInventory().addItem(timeBook);
+        }
+    }
+
+    /**
      * Distribute team-specific items to all players based on their team
      */
     public void distributeTeamItems() {
@@ -91,9 +124,17 @@ public class ItemManager {
             clearPlayerInventory(p);
 
             if (teamManager.isPlayerInOniTeam(p)) {
-                // Oni team gets Yasha item
+                // 鬼チーム用アイテム
                 ItemStack yashaItem = createYashaItem();
                 p.getInventory().addItem(yashaItem);
+
+                // 新しい鬼アイテム
+                ItemStack chestDetector = createChestDetectorItem();
+                p.getInventory().addItem(chestDetector);
+
+                ItemStack chestTeleporter = createChestTeleporterItem();
+                p.getInventory().addItem(chestTeleporter);
+
                 p.sendMessage(ChatColor.RED + "鬼チーム用アイテムを付与しました");
             } else if (teamManager.isPlayerInPlayerTeam(p)) {
                 // Player team gets hiding orb
@@ -142,6 +183,36 @@ public class ItemManager {
     }
 
     /**
+     * Create chest detector item (for oni)
+     */
+    public ItemStack createChestDetectorItem() {
+        ItemStack detector = new ItemStack(Material.COMPASS);
+        ItemMeta meta = detector.getItemMeta();
+        meta.setDisplayName(ChatColor.RED + "プレイヤー探知コンパス");
+        List<String> lore = new ArrayList<>();
+        lore.add("右クリックでプレイヤーが近くにいるチェストの場所を探知");
+        lore.add("クールダウン：60秒");
+        meta.setLore(lore);
+        detector.setItemMeta(meta);
+        return detector;
+    }
+
+    /**
+     * Create chest teleporter item (for oni)
+     */
+    public ItemStack createChestTeleporterItem() {
+        ItemStack teleporter = new ItemStack(Material.ENDER_PEARL);
+        ItemMeta meta = teleporter.getItemMeta();
+        meta.setDisplayName(ChatColor.RED + "チェストワープの真珠");
+        List<String> lore = new ArrayList<>();
+        lore.add("右クリックでプレイヤーの近くのチェストにワープ");
+        lore.add("クールダウン：120秒");
+        meta.setLore(lore);
+        teleporter.setItemMeta(meta);
+        return teleporter;
+    }
+
+    /**
      * Create exit key item
      */
     public ItemStack createExitKeyItem() {
@@ -149,7 +220,7 @@ public class ItemManager {
         ItemMeta meta = exitKey.getItemMeta();
         meta.setDisplayName(ChatColor.GOLD + "出口の鍵");
         List<String> lore = new ArrayList<>();
-        lore.add("すべてのチェストを開けて入手したアイテム");
+        lore.add("チェストを開けて入手したアイテム");
         lore.add("出口のドアで使用することで脱出が可能になる");
         meta.setLore(lore);
         exitKey.setItemMeta(meta);
@@ -208,7 +279,7 @@ public class ItemManager {
 
         chestCountPages.add("§l§6★ カウントチェスト設定 ★§r\n\n"+
                 "現在の設定:\n" +
-                "・必要数: §e" + currentRequired + "§r個\n" +
+                "・必要数: §e" + currentRequired + "§r個/プレイヤー\n" +
                 "・登録済み: §e" + totalChests + "§r個\n\n" +
                 "§a[1個]§r - 簡単モード\n"+
                 "§e[3個]§r - 標準モード\n"+
@@ -217,6 +288,28 @@ public class ItemManager {
         chestCountBookMeta.setPages(chestCountPages);
         chestCountBook.setItemMeta(chestCountBookMeta);
         return chestCountBook;
+    }
+
+    /**
+     * Create game time book
+     */
+    public ItemStack createGameTimeBook() {
+        ItemStack timeBook = new ItemStack(Material.WRITTEN_BOOK);
+        BookMeta timeBookMeta = (BookMeta) timeBook.getItemMeta();
+        timeBookMeta.setTitle("ゲーム時間設定本");
+        timeBookMeta.setAuthor("鬼ごっこプラグイン");
+        List<String> timePages = new ArrayList<>();
+
+        timePages.add("§l§6★ ゲーム時間設定 ★§r\n\n"+
+                "現在の設定:\n" +
+                "・ゲーム時間: §e" + plugin.getGameManager().getRemainingTime() + "§r秒\n\n" +
+                "§a[180秒]§r - 短時間モード\n"+
+                "§e[300秒]§r - 標準モード\n"+
+                "§c[600秒]§r - 長時間モード\n"+
+                "§d[カスタム]§r - 数値入力(最低60秒)");
+        timeBookMeta.setPages(timePages);
+        timeBook.setItemMeta(timeBookMeta);
+        return timeBook;
     }
 
     /**
@@ -237,6 +330,26 @@ public class ItemManager {
                 item.getType() == Material.DIAMOND &&
                 item.hasItemMeta() &&
                 (ChatColor.AQUA + "隠れ玉").equals(item.getItemMeta().getDisplayName());
+    }
+
+    /**
+     * Check if an item is the chest detector
+     */
+    public boolean isChestDetectorItem(ItemStack item) {
+        return item != null &&
+                item.getType() == Material.COMPASS &&
+                item.hasItemMeta() &&
+                (ChatColor.RED + "プレイヤー探知コンパス").equals(item.getItemMeta().getDisplayName());
+    }
+
+    /**
+     * Check if an item is the chest teleporter
+     */
+    public boolean isChestTeleporterItem(ItemStack item) {
+        return item != null &&
+                item.getType() == Material.ENDER_PEARL &&
+                item.hasItemMeta() &&
+                (ChatColor.RED + "チェストワープの真珠").equals(item.getItemMeta().getDisplayName());
     }
 
     /**
@@ -280,5 +393,102 @@ public class ItemManager {
                 item.hasItemMeta() &&
                 item.getItemMeta() instanceof BookMeta &&
                 "チェスト設定本".equals(((BookMeta) item.getItemMeta()).getTitle());
+    }
+
+    /**
+     * Check if an item is the game time book
+     */
+    public boolean isGameTimeBook(ItemStack item) {
+        return item != null &&
+                item.getType() == Material.WRITTEN_BOOK &&
+                item.hasItemMeta() &&
+                item.getItemMeta() instanceof BookMeta &&
+                "ゲーム時間設定本".equals(((BookMeta) item.getItemMeta()).getTitle());
+    }
+
+    /**
+     * Check if chest detector is on cooldown
+     */
+    public boolean isChestDetectorOnCooldown(UUID playerUuid) {
+        if (!chestDetectorCooldowns.containsKey(playerUuid)) {
+            return false;
+        }
+
+        long lastUsed = chestDetectorCooldowns.get(playerUuid);
+        long currentTime = System.currentTimeMillis();
+        return (currentTime - lastUsed) < DETECTOR_COOLDOWN_MS;
+    }
+
+    /**
+     * Set chest detector on cooldown
+     */
+    public void setChestDetectorCooldown(UUID playerUuid) {
+        chestDetectorCooldowns.put(playerUuid, System.currentTimeMillis());
+    }
+
+    /**
+     * Get chest detector remaining cooldown in seconds
+     */
+    public int getChestDetectorRemainingCooldown(UUID playerUuid) {
+        if (!chestDetectorCooldowns.containsKey(playerUuid)) {
+            return 0;
+        }
+
+        long lastUsed = chestDetectorCooldowns.get(playerUuid);
+        long currentTime = System.currentTimeMillis();
+        long elapsedTime = currentTime - lastUsed;
+
+        if (elapsedTime >= DETECTOR_COOLDOWN_MS) {
+            return 0;
+        }
+
+        return (int)((DETECTOR_COOLDOWN_MS - elapsedTime) / 1000);
+    }
+
+    /**
+     * Check if chest teleporter is on cooldown
+     */
+    public boolean isChestTeleporterOnCooldown(UUID playerUuid) {
+        if (!chestTeleporterCooldowns.containsKey(playerUuid)) {
+            return false;
+        }
+
+        long lastUsed = chestTeleporterCooldowns.get(playerUuid);
+        long currentTime = System.currentTimeMillis();
+        return (currentTime - lastUsed) < TELEPORTER_COOLDOWN_MS;
+    }
+
+    /**
+     * Set chest teleporter on cooldown
+     */
+    public void setChestTeleporterCooldown(UUID playerUuid) {
+        chestTeleporterCooldowns.put(playerUuid, System.currentTimeMillis());
+    }
+
+    /**
+     * Get chest teleporter remaining cooldown in seconds
+     */
+    public int getChestTeleporterRemainingCooldown(UUID playerUuid) {
+        if (!chestTeleporterCooldowns.containsKey(playerUuid)) {
+            return 0;
+        }
+
+        long lastUsed = chestTeleporterCooldowns.get(playerUuid);
+        long currentTime = System.currentTimeMillis();
+        long elapsedTime = currentTime - lastUsed;
+
+        if (elapsedTime >= TELEPORTER_COOLDOWN_MS) {
+            return 0;
+        }
+
+        return (int)((TELEPORTER_COOLDOWN_MS - elapsedTime) / 1000);
+    }
+
+    /**
+     * Reset all cooldowns
+     */
+    public void resetAllCooldowns() {
+        chestDetectorCooldowns.clear();
+        chestTeleporterCooldowns.clear();
     }
 }
