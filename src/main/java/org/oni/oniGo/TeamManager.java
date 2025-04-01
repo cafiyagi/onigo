@@ -167,7 +167,7 @@ public class TeamManager {
     }
 
     /**
-     * Update scoreboard display with per-player count chest info and remaining chests
+     * Update the scoreboard
      */
     public void updateScoreboard(int remainingTime, Map<UUID, Integer> kakureDamaRemaining,
                                  Map<UUID, Integer> playerOpenedCountChests,
@@ -185,7 +185,7 @@ public class TeamManager {
 
             // Display remaining time
             Score timeScore = playerObjective.getScore(ChatColor.YELLOW + "残り時間: " + remainingTime + "秒");
-            timeScore.setScore(12);
+            timeScore.setScore(14);
 
             // Count survivors (players not in spectator mode)
             int survivors = 0;
@@ -195,16 +195,16 @@ public class TeamManager {
                 }
             }
             Score survivorsScore = playerObjective.getScore(ChatColor.GREEN + "生存者数: " + survivors + "人");
-            survivorsScore.setScore(11);
+            survivorsScore.setScore(13);
 
             // Escaped players
             Score escapedScore = playerObjective.getScore(ChatColor.AQUA + "脱出者数: " + escapedPlayers.size() + "人");
-            escapedScore.setScore(10);
+            escapedScore.setScore(12);
 
             // 残りチェスト数（プレイヤーチームのみ）
             if (isPlayerInPlayerTeam(p) && !isPlayerInOniTeam(p)) {
                 Score remainingChestsScore = playerObjective.getScore(ChatColor.GOLD + "残りチェスト: " + remainingChests + "個");
-                remainingChestsScore.setScore(9);
+                remainingChestsScore.setScore(11);
             }
 
             // Special information only for player team
@@ -215,12 +215,37 @@ public class TeamManager {
                 int required = playerRequiredCountChests.getOrDefault(playerId, 0);
 
                 Score countChestScore = playerObjective.getScore(ChatColor.GOLD + "カウントチェスト: " + opened + "/" + required);
-                countChestScore.setScore(8);
+                countChestScore.setScore(10);
 
                 // Show individual hiding orb time
                 int rem = kakureDamaRemaining.getOrDefault(playerId, 0);
                 Score kdScore = playerObjective.getScore(ChatColor.AQUA + "隠れ玉: " + rem + "秒");
-                kdScore.setScore(7);
+                kdScore.setScore(9);
+
+                // プレイヤー緊急脱出アイテムのクールダウン
+                ItemManager itemManager = plugin.getItemManager();
+                int playerEscapeCooldown = itemManager.getPlayerEscapeRemainingCooldown(playerId);
+                Score escapeScore = playerObjective.getScore(ChatColor.BLUE + "緊急脱出: " +
+                        (playerEscapeCooldown > 0 ? playerEscapeCooldown + "秒" : "準備完了"));
+                escapeScore.setScore(8);
+            }
+
+            // 鬼チーム用のクールダウン表示
+            if (isPlayerInOniTeam(p)) {
+                UUID playerId = p.getUniqueId();
+                ItemManager itemManager = plugin.getItemManager();
+
+                // チェスト探知アイテムのクールダウン
+                int detectorCooldown = itemManager.getChestDetectorRemainingCooldown(playerId);
+                Score detectorScore = playerObjective.getScore(ChatColor.RED + "探知コンパス: " +
+                        (detectorCooldown > 0 ? detectorCooldown + "秒" : "準備完了"));
+                detectorScore.setScore(10);
+
+                // チェストワープアイテムのクールダウン
+                int teleporterCooldown = itemManager.getChestTeleporterRemainingCooldown(playerId);
+                Score teleporterScore = playerObjective.getScore(ChatColor.RED + "チェストワープ: " +
+                        (teleporterCooldown > 0 ? teleporterCooldown + "秒" : "準備完了"));
+                teleporterScore.setScore(9);
             }
 
             // Team counts for everyone
@@ -236,9 +261,6 @@ public class TeamManager {
 
             Score winCondition1 = playerObjective.getScore(ChatColor.WHITE + "・過半数脱出で勝利");
             winCondition1.setScore(3);
-
-            Score winCondition2 = playerObjective.getScore(ChatColor.WHITE + "・(0,0,7)で勝利");
-            winCondition2.setScore(2);
 
             Score winCondition3 = playerObjective.getScore(ChatColor.LIGHT_PURPLE + "----------");
             winCondition3.setScore(1);
@@ -306,4 +328,35 @@ public class TeamManager {
     public Set<UUID> getEscapedPlayers() {
         return escapedPlayers;
     }
+    // 出口ドアを開けたプレイヤーの追跡用セット
+    private Set<UUID> doorOpenedPlayers = new HashSet<>();
+
+    /**
+     * 出口ドアを開けたプレイヤーを追加
+     */
+    public void addDoorOpenedPlayer(Player player) {
+        doorOpenedPlayers.add(player.getUniqueId());
+    }
+
+    /**
+     * 過半数のプレイヤーが出口ドアを開けたかチェック
+     */
+    public boolean haveHalfPlayersDoorOpened() {
+        return doorOpenedPlayers.size() > initialPlayerCount / 2;
+    }
+
+    /**
+     * 出口ドアを開けたプレイヤーリストをリセット
+     */
+    public void resetDoorOpenedPlayers() {
+        doorOpenedPlayers.clear();
+    }
+
+    /**
+     * 出口ドアを開けたプレイヤー数を取得
+     */
+    public int getDoorOpenedPlayerCount() {
+        return doorOpenedPlayers.size();
+    }
 }
+

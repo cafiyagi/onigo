@@ -17,13 +17,15 @@ public class ItemManager {
     private final OniGo plugin;
     private final TeamManager teamManager;
 
-    // 鬼アイテムのクールダウン管理
+    // クールダウン管理
     private Map<UUID, Long> chestDetectorCooldowns = new HashMap<>();
     private Map<UUID, Long> chestTeleporterCooldowns = new HashMap<>();
+    private Map<UUID, Long> playerEscapeCooldowns = new HashMap<>();
 
     // クールダウン時間（ミリ秒）
     private static final long DETECTOR_COOLDOWN_MS = 60000; // 60秒
     private static final long TELEPORTER_COOLDOWN_MS = 120000; // 120秒
+    private static final long PLAYER_ESCAPE_COOLDOWN_MS = 60000; // 60秒
 
     public ItemManager(OniGo plugin, TeamManager teamManager) {
         this.plugin = plugin;
@@ -48,6 +50,10 @@ public class ItemManager {
 
         ItemStack chestTeleporter = createChestTeleporterItem();
         player.getInventory().addItem(chestTeleporter);
+
+        // 新しいプレイヤーアイテム
+        ItemStack playerEscape = createPlayerEscapeItem();
+        player.getInventory().addItem(playerEscape);
 
         // Give team selection book
         ItemStack teamBook = createTeamSelectBook();
@@ -140,6 +146,11 @@ public class ItemManager {
                 // Player team gets hiding orb
                 ItemStack kakureDama = createKakureDamaItem();
                 p.getInventory().addItem(kakureDama);
+
+                // Add new player escape item
+                ItemStack playerEscape = createPlayerEscapeItem();
+                p.getInventory().addItem(playerEscape);
+
                 p.sendMessage(ChatColor.BLUE + "プレイヤーチーム用アイテムを付与しました");
             }
         }
@@ -186,7 +197,7 @@ public class ItemManager {
      * Create chest detector item (for oni)
      */
     public ItemStack createChestDetectorItem() {
-        ItemStack detector = new ItemStack(Material.COMPASS);
+        ItemStack detector = new ItemStack(Material.BLUE_WOOL);
         ItemMeta meta = detector.getItemMeta();
         meta.setDisplayName(ChatColor.RED + "プレイヤー探知コンパス");
         List<String> lore = new ArrayList<>();
@@ -201,7 +212,7 @@ public class ItemManager {
      * Create chest teleporter item (for oni)
      */
     public ItemStack createChestTeleporterItem() {
-        ItemStack teleporter = new ItemStack(Material.ENDER_PEARL);
+        ItemStack teleporter = new ItemStack(Material.GREEN_WOOL);
         ItemMeta meta = teleporter.getItemMeta();
         meta.setDisplayName(ChatColor.RED + "チェストワープの真珠");
         List<String> lore = new ArrayList<>();
@@ -210,6 +221,21 @@ public class ItemManager {
         meta.setLore(lore);
         teleporter.setItemMeta(meta);
         return teleporter;
+    }
+
+    /**
+     * Create player escape item
+     */
+    public ItemStack createPlayerEscapeItem() {
+        ItemStack escapeItem = new ItemStack(Material.NETHER_STAR);
+        ItemMeta meta = escapeItem.getItemMeta();
+        meta.setDisplayName(ChatColor.BLUE + "緊急脱出アイテム");
+        List<String> lore = new ArrayList<>();
+        lore.add("右クリックで鬼が近くにいる場合、ランダムなチェストの近くにテレポート");
+        lore.add("クールダウン：60秒");
+        meta.setLore(lore);
+        escapeItem.setItemMeta(meta);
+        return escapeItem;
     }
 
     /**
@@ -337,7 +363,7 @@ public class ItemManager {
      */
     public boolean isChestDetectorItem(ItemStack item) {
         return item != null &&
-                item.getType() == Material.COMPASS &&
+                item.getType() == Material.BLUE_WOOL &&
                 item.hasItemMeta() &&
                 (ChatColor.RED + "プレイヤー探知コンパス").equals(item.getItemMeta().getDisplayName());
     }
@@ -347,9 +373,19 @@ public class ItemManager {
      */
     public boolean isChestTeleporterItem(ItemStack item) {
         return item != null &&
-                item.getType() == Material.ENDER_PEARL &&
+                item.getType() == Material.GREEN_WOOL &&
                 item.hasItemMeta() &&
                 (ChatColor.RED + "チェストワープの真珠").equals(item.getItemMeta().getDisplayName());
+    }
+
+    /**
+     * Check if an item is the player escape item
+     */
+    public boolean isPlayerEscapeItem(ItemStack item) {
+        return item != null &&
+                item.getType() == Material.NETHER_STAR &&
+                item.hasItemMeta() &&
+                (ChatColor.BLUE + "緊急脱出アイテム").equals(item.getItemMeta().getDisplayName());
     }
 
     /**
@@ -485,10 +521,50 @@ public class ItemManager {
     }
 
     /**
+     * Check if player escape item is on cooldown
+     */
+    public boolean isPlayerEscapeOnCooldown(UUID playerUuid) {
+        if (!playerEscapeCooldowns.containsKey(playerUuid)) {
+            return false;
+        }
+
+        long lastUsed = playerEscapeCooldowns.get(playerUuid);
+        long currentTime = System.currentTimeMillis();
+        return (currentTime - lastUsed) < PLAYER_ESCAPE_COOLDOWN_MS;
+    }
+
+    /**
+     * Set player escape item on cooldown
+     */
+    public void setPlayerEscapeCooldown(UUID playerUuid) {
+        playerEscapeCooldowns.put(playerUuid, System.currentTimeMillis());
+    }
+
+    /**
+     * Get player escape item remaining cooldown in seconds
+     */
+    public int getPlayerEscapeRemainingCooldown(UUID playerUuid) {
+        if (!playerEscapeCooldowns.containsKey(playerUuid)) {
+            return 0;
+        }
+
+        long lastUsed = playerEscapeCooldowns.get(playerUuid);
+        long currentTime = System.currentTimeMillis();
+        long elapsedTime = currentTime - lastUsed;
+
+        if (elapsedTime >= PLAYER_ESCAPE_COOLDOWN_MS) {
+            return 0;
+        }
+
+        return (int)((PLAYER_ESCAPE_COOLDOWN_MS - elapsedTime) / 1000);
+    }
+
+    /**
      * Reset all cooldowns
      */
     public void resetAllCooldowns() {
         chestDetectorCooldowns.clear();
         chestTeleporterCooldowns.clear();
+        playerEscapeCooldowns.clear();
     }
 }

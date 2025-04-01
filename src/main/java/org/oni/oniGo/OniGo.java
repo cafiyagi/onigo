@@ -486,6 +486,48 @@ public final class OniGo extends JavaPlugin implements CommandExecutor, Listener
                 effectManager.startKakureDamaEffect(player);
             }
         }
+        // Handle chest detector (compass)
+        else if (itemManager.isChestDetectorItem(item)) {
+            event.setCancelled(true);
+            if (!gameManager.isGameRunning()) {
+                player.sendMessage(ChatColor.RED + "ゲームが開始されていないよ！");
+                return;
+            }
+            if (!teamManager.isPlayerInOniTeam(player)) {
+                player.sendMessage(ChatColor.RED + "鬼陣営のみ使用可能だよ！");
+                return;
+            }
+
+            gameManager.detectNearbyChests(player);
+        }
+        // Handle chest teleporter (pearl)
+        else if (itemManager.isChestTeleporterItem(item)) {
+            event.setCancelled(true);
+            if (!gameManager.isGameRunning()) {
+                player.sendMessage(ChatColor.RED + "ゲームが開始されていないよ！");
+                return;
+            }
+            if (!teamManager.isPlayerInOniTeam(player)) {
+                player.sendMessage(ChatColor.RED + "鬼陣営のみ使用可能だよ！");
+                return;
+            }
+
+            gameManager.teleportToNearbyChest(player);
+        }
+        // Handle player escape item
+        else if (itemManager.isPlayerEscapeItem(item)) {
+            event.setCancelled(true);
+            if (!gameManager.isGameRunning()) {
+                player.sendMessage(ChatColor.RED + "ゲームが開始されていないよ！");
+                return;
+            }
+            if (!teamManager.isPlayerInPlayerTeam(player)) {
+                player.sendMessage(ChatColor.RED + "プレイヤー陣営のみ使用可能だよ！");
+                return;
+            }
+
+            gameManager.handlePlayerEscape(player);
+        }
         // Handle exit key item
         else if (itemManager.isExitKeyItem(item) && event.getAction() == Action.RIGHT_CLICK_BLOCK) {
             event.setCancelled(true);
@@ -536,9 +578,8 @@ public final class OniGo extends JavaPlugin implements CommandExecutor, Listener
                     player.getInventory().removeItem(item);
                 }
 
-                // Open the exit door
-                gameManager.openExitDoor();
-                player.sendMessage(ChatColor.GREEN + "鍵を使って出口ドアを開いたよ！");
+                // Open the exit door with the player reference
+                gameManager.openExitDoor(player);
                 return;
             }
 
@@ -1015,5 +1056,12 @@ public final class OniGo extends JavaPlugin implements CommandExecutor, Listener
      */
     public GameManager getGameManager() {
         return gameManager;
+    }
+
+    /**
+     * ItemManagerを取得するためのアクセサメソッド
+     */
+    public ItemManager getItemManager() {
+        return itemManager;
     }
 }
