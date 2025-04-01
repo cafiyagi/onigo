@@ -1,0 +1,34 @@
+name: OniGo
+main: org.oni.oniGo.OniGo
+version: 1.5
+commands:
+  yasha:
+    description: 夜叉効果を開始する
+    usage: /yasha
+  end:
+    description: 夜叉効果を終了する
+    usage: /end
+  getcmditem:
+    description: ゲームアイテムを取得する
+    usage: /getcmditem
+  re:
+    description: プラグインを再起動する
+    usage: /re
+  start:
+    description: 鬼ごっこゲームを開始する（全員のインベントリクリア＋陣営専用アイテム支給）
+    usage: /start
+  stop:
+    description: 鬼ごっこゲームを停止する
+    usage: /stop
+  select:
+    description: 陣営を選択する例 (select player または select oni)
+    usage: /select <player/oni>
+  onistart:
+    description: コマンド実行者を鬼に確定しゲーム開始する
+    usage: /onistart
+  set:
+    description: チェストやドアなどの条件を登録・変更する
+    usage: /set <chest/door> [名前]
+  gamegive:
+    description: 陣営選択本を全プレイヤーに配布し、ゲームスタート本を特定のプレイヤーに配布する
+    usage: /gamegive
