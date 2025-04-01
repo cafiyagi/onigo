@@ -16,10 +16,6 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
-import java.util.HashSet;
-import java.util.Set;
-import java.util.UUID;
-
 public class TeamManager {
     private final OniGo plugin;
 
@@ -170,9 +166,10 @@ public class TeamManager {
     }
 
     /**
-     * Update scoreboard display
+     * Update scoreboard display with count chest info
      */
-    public void updateScoreboard(int remainingTime, Map<UUID, Integer> kakureDamaRemaining) {
+    public void updateScoreboard(int remainingTime, Map<UUID, Integer> kakureDamaRemaining,
+                                 int openedCountChests, int requiredCountChests) {
         // Clear existing entries
         for (String entry : scoreboard.getEntries()) {
             scoreboard.resetScores(entry);
@@ -180,7 +177,7 @@ public class TeamManager {
 
         // Display remaining time
         Score timeScore = objective.getScore(ChatColor.YELLOW + "残り時間: " + remainingTime + "秒");
-        timeScore.setScore(7);
+        timeScore.setScore(9);
 
         // Count survivors (players not in spectator mode)
         int survivors = 0;
@@ -190,27 +187,32 @@ public class TeamManager {
             }
         }
         Score survivorsScore = objective.getScore(ChatColor.GREEN + "生存者数: " + survivors + "人");
-        survivorsScore.setScore(6);
+        survivorsScore.setScore(8);
 
         // Escaped players
         Score escapedScore = objective.getScore(ChatColor.AQUA + "脱出者数: " + escapedPlayers.size() + "人");
-        escapedScore.setScore(5);
+        escapedScore.setScore(7);
+
+        // Count chest progress
+        Score countChestScore = objective.getScore(ChatColor.GOLD + "カウントチェスト: " + openedCountChests + "/" + requiredCountChests);
+        countChestScore.setScore(6);
 
         // Team counts
         Score oniScore = objective.getScore(ChatColor.RED + "鬼: " + oniTeam.getSize() + "人");
-        oniScore.setScore(4);
+        oniScore.setScore(5);
 
         Score playerScore = objective.getScore(ChatColor.BLUE + "プレイヤー: " + playerTeam.getSize() + "人");
-        playerScore.setScore(3);
+        playerScore.setScore(4);
 
         // Show individual hiding orb times
-        int i = 2;
+        int i = 3;
         for (Player p : Bukkit.getOnlinePlayers()) {
             if (playerTeam.hasEntry(p.getName())) {
                 int rem = kakureDamaRemaining.getOrDefault(p.getUniqueId(), 0);
                 Score kdScore = objective.getScore(ChatColor.AQUA + p.getName() + ": 隠れ玉 " + rem + "秒");
                 kdScore.setScore(i);
                 i--;
+                if (i < 0) break; // 表示制限
             }
         }
 
@@ -218,6 +220,14 @@ public class TeamManager {
         for (Player p : Bukkit.getOnlinePlayers()) {
             p.setScoreboard(scoreboard);
         }
+    }
+
+    /**
+     * 古いupdateScoreboardメソッド（互換性のために残す）
+     */
+    public void updateScoreboard(int remainingTime, Map<UUID, Integer> kakureDamaRemaining) {
+        // デフォルトの値でカウントチェスト情報を追加
+        updateScoreboard(remainingTime, kakureDamaRemaining, 0, 0);
     }
 
     /**

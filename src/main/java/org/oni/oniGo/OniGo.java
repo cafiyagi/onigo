@@ -5,6 +5,8 @@ import org.bukkit.ChatColor;
 import org.bukkit.GameMode;
 import org.bukkit.Location;
 import org.bukkit.Material;
+import org.bukkit.Sound;
+import org.bukkit.block.Block;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
@@ -178,7 +180,7 @@ public final class OniGo extends JavaPlugin implements CommandExecutor, Listener
      */
     private void handleSetCommand(Player player, String[] args) {
         if (args.length == 0) {
-            player.sendMessage(ChatColor.RED + "使い方: /set chest <名前>  または  /set door");
+            player.sendMessage(ChatColor.RED + "使い方: /set chest <名前>  または  /set countchest <名前>  または  /set door  または  /set exitdoor");
             return;
         }
 
@@ -200,6 +202,23 @@ public final class OniGo extends JavaPlugin implements CommandExecutor, Listener
             configManager.registerChest(chestName, block.getLocation());
             player.sendMessage(ChatColor.GREEN + "チェスト「" + chestName + "」を登録したよ！");
         }
+        else if (sub.equals("countchest")) {
+            if (args.length < 2) {
+                player.sendMessage(ChatColor.RED + "カウントチェストの名前を指定してね: /set countchest <名前>");
+                return;
+            }
+
+            // Check if player is looking at a chest
+            org.bukkit.block.Block block = player.getTargetBlockExact(5);
+            if (block == null || !(block.getState() instanceof org.bukkit.block.Chest)) {
+                player.sendMessage(ChatColor.RED + "近くにチェストがないか、ターゲットしていないよ！");
+                return;
+            }
+
+            String chestName = args[1];
+            configManager.registerCountChest(chestName, block.getLocation());
+            player.sendMessage(ChatColor.GOLD + "カウントチェスト「" + chestName + "」を登録したよ！");
+        }
         else if (sub.equals("door")) {
             // Check if player is looking at a door
             org.bukkit.block.Block block = player.getTargetBlockExact(5);
@@ -209,10 +228,40 @@ public final class OniGo extends JavaPlugin implements CommandExecutor, Listener
             }
 
             configManager.registerDoor(block.getLocation());
-            player.sendMessage(ChatColor.GREEN + "ドアを登録したよ！");
+            player.sendMessage(ChatColor.GREEN + "メインドアを登録したよ！");
+        }
+        else if (sub.equals("exitdoor")) {
+            // Check if player is looking at a door
+            org.bukkit.block.Block block = player.getTargetBlockExact(5);
+            if (block == null || (!block.getType().toString().contains("DOOR"))) {
+                player.sendMessage(ChatColor.RED + "近くにドアがないか、ターゲットしていないよ！");
+                return;
+            }
+
+            configManager.registerExitDoor(block.getLocation());
+            player.sendMessage(ChatColor.GREEN + "出口ドアを登録したよ！");
+        }
+        else if (sub.equals("setreq")) {
+            if (args.length < 2) {
+                player.sendMessage(ChatColor.RED + "必要なカウントチェスト数を指定してね: /set setreq <数>");
+                return;
+            }
+
+            try {
+                int requiredChests = Integer.parseInt(args[1]);
+                if (requiredChests < 1) {
+                    player.sendMessage(ChatColor.RED + "1以上の値を指定してね！");
+                    return;
+                }
+
+                configManager.setRequiredCountChests(requiredChests);
+                player.sendMessage(ChatColor.GREEN + "鍵入手に必要なカウントチェスト数を" + requiredChests + "に設定したよ！");
+            } catch (NumberFormatException e) {
+                player.sendMessage(ChatColor.RED + "数値を指定してね: /set setreq <数>");
+            }
         }
         else {
-            player.sendMessage(ChatColor.RED + "使い方: /set chest <名前>  または  /set door");
+            player.sendMessage(ChatColor.RED + "使い方: /set chest <名前>  または  /set countchest <名前>  または  /set door  または  /set exitdoor");
         }
     }
 
@@ -251,10 +300,16 @@ public final class OniGo extends JavaPlugin implements CommandExecutor, Listener
         if (event.getInventory().getLocation() == null) return;
         Location loc = event.getInventory().getLocation();
 
-        // Check if the chest is registered
+        // Check if the chest is a regular chest
         String chestName = configManager.getChestNameAtLocation(loc);
         if (chestName != null) {
             gameManager.handleChestOpened(chestName, player);
+        }
+
+        // Check if the chest is a count chest
+        String countChestName = configManager.getCountChestNameAtLocation(loc);
+        if (countChestName != null) {
+            gameManager.handleCountChestOpened(countChestName, player);
         }
     }
 
@@ -297,6 +352,64 @@ public final class OniGo extends JavaPlugin implements CommandExecutor, Listener
                 // Start invisibility
                 effectManager.startKakureDamaEffect(player);
             }
+        }
+        // Handle exit key item
+        else if (itemManager.isExitKeyItem(item) && event.getAction() == Action.RIGHT_CLICK_BLOCK) {
+            event.setCancelled(true);
+            if (!gameManager.isGameRunning()) {
+                player.sendMessage(ChatColor.RED + "ゲームが開始されていないよ！");
+                return;
+            }
+
+            // Check if the clicked block is a door
+            Block clickedBlock = event.getClickedBlock();
+            if (clickedBlock == null) return;
+
+            // Check if it's the main door
+            Location doorLoc = configManager.getDoorLocation();
+            if (doorLoc != null && clickedBlock.getLocation().equals(doorLoc)) {
+                // Check if door is already open
+                if (gameManager.isDoorOpened()) {
+                    player.sendMessage(ChatColor.YELLOW + "メインドアはすでに開いているよ！");
+                    return;
+                }
+
+                // Remove one key from inventory
+                if (item.getAmount() > 1) {
+                    item.setAmount(item.getAmount() - 1);
+                } else {
+                    player.getInventory().removeItem(item);
+                }
+
+                // Open the main door
+                gameManager.openDoor();
+                player.sendMessage(ChatColor.GREEN + "鍵を使ってメインドアを開いたよ！");
+                return;
+            }
+
+            // Check if it's the exit door
+            Location exitDoorLoc = configManager.getExitDoorLocation();
+            if (exitDoorLoc != null && clickedBlock.getLocation().equals(exitDoorLoc)) {
+                // Check if door is already open
+                if (gameManager.isExitDoorOpened()) {
+                    player.sendMessage(ChatColor.YELLOW + "出口ドアはすでに開いているよ！");
+                    return;
+                }
+
+                // Remove one key from inventory
+                if (item.getAmount() > 1) {
+                    item.setAmount(item.getAmount() - 1);
+                } else {
+                    player.getInventory().removeItem(item);
+                }
+
+                // Open the exit door
+                gameManager.openExitDoor();
+                player.sendMessage(ChatColor.GREEN + "鍵を使って出口ドアを開いたよ！");
+                return;
+            }
+
+            player.sendMessage(ChatColor.RED + "この場所では鍵を使えないよ。ドアのところで使おう！");
         }
         // Handle team selection book
         else if (itemManager.isTeamSelectBook(item)) {

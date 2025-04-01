@@ -39,6 +39,10 @@ public class ItemManager {
         ItemStack startBook = createGameStartBook();
         player.getInventory().addItem(startBook);
 
+        // Give exit key (for testing)
+        ItemStack exitKey = createExitKeyItem();
+        player.getInventory().addItem(exitKey);
+
         player.sendMessage(ChatColor.GREEN + "ゲームアイテムを取得したよ！");
     }
 
@@ -123,6 +127,21 @@ public class ItemManager {
     }
 
     /**
+     * Create exit key item
+     */
+    public ItemStack createExitKeyItem() {
+        ItemStack exitKey = new ItemStack(Material.TRIPWIRE_HOOK);
+        ItemMeta meta = exitKey.getItemMeta();
+        meta.setDisplayName(ChatColor.GOLD + "出口の鍵");
+        List<String> lore = new ArrayList<>();
+        lore.add("すべてのチェストを開けて入手したアイテム");
+        lore.add("出口のドアで使用することで脱出が可能になる");
+        meta.setLore(lore);
+        exitKey.setItemMeta(meta);
+        return exitKey;
+    }
+
+    /**
      * Create team selection book
      */
     public ItemStack createTeamSelectBook() {
@@ -174,6 +193,16 @@ public class ItemManager {
                 item.getType() == Material.DIAMOND &&
                 item.hasItemMeta() &&
                 (ChatColor.AQUA + "隠れ玉").equals(item.getItemMeta().getDisplayName());
+    }
+
+    /**
+     * Check if an item is the exit key
+     */
+    public boolean isExitKeyItem(ItemStack item) {
+        return item != null &&
+                item.getType() == Material.TRIPWIRE_HOOK &&
+                item.hasItemMeta() &&
+                (ChatColor.GOLD + "出口の鍵").equals(item.getItemMeta().getDisplayName());
     }
 
     /**

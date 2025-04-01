@@ -7,10 +7,13 @@ import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.Sound;
 import org.bukkit.block.Block;
+import org.bukkit.block.data.BlockData;
+import org.bukkit.block.data.Openable;
 import org.bukkit.boss.BarColor;
 import org.bukkit.boss.BarStyle;
 import org.bukkit.boss.BossBar;
 import org.bukkit.entity.Player;
+import org.bukkit.inventory.ItemStack;
 import org.bukkit.potion.PotionEffectType;
 import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.scheduler.BukkitTask;
@@ -31,6 +34,13 @@ public class GameManager {
     private int remainingTime = 500;
     private BukkitTask gameTimerTask;
     private BossBar timerBar;
+
+    // Door open states
+    private boolean doorOpened = false;
+    private boolean exitDoorOpened = false;
+
+    // Exit door auto-close task
+    private BukkitTask exitDoorCloseTask = null;
 
     // Player respawn tasks
     private Map<UUID, BukkitTask> respawnTasks = new HashMap<>();
@@ -70,6 +80,8 @@ public class GameManager {
         // Initialize game state
         gameRunning = true;
         remainingTime = 500;
+        doorOpened = false;
+        exitDoorOpened = false;
         teamManager.initializeGameState();
 
         // Reset all chest statuses
@@ -233,6 +245,12 @@ public class GameManager {
         }
         respawnTasks.clear();
 
+        // Cancel exit door close task
+        if (exitDoorCloseTask != null) {
+            exitDoorCloseTask.cancel();
+            exitDoorCloseTask = null;
+        }
+
         // Remove timer bar from all players
         if (timerBar != null) {
             timerBar.removeAll();
@@ -308,7 +326,8 @@ public class GameManager {
      * Update the scoreboard
      */
     public void updateScoreboard() {
-        teamManager.updateScoreboard(remainingTime, effectManager.getKakureDamaRemaining());
+        teamManager.updateScoreboard(remainingTime, effectManager.getKakureDamaRemaining(),
+                configManager.getOpenedCountChestsCount(), configManager.getRequiredCountChests());
     }
 
     /**
@@ -374,26 +393,32 @@ public class GameManager {
         if (playerLoc.getWorld().equals(escapeLoc.getWorld()) &&
                 playerLoc.distance(escapeLoc) <= 3) {
 
-            // Player has escaped
-            teamManager.addEscapedPlayer(player);
-            player.sendMessage(ChatColor.GREEN + "脱出地点に到達しました！");
-            Bukkit.broadcastMessage(ChatColor.AQUA + player.getName() + "が脱出地点に到達しました！");
+            // Check if the exit door has been opened
+            if (exitDoorOpened) {
+                // Player has escaped
+                teamManager.addEscapedPlayer(player);
+                player.sendMessage(ChatColor.GREEN + "脱出地点に到達しました！");
+                Bukkit.broadcastMessage(ChatColor.AQUA + player.getName() + "が脱出地点に到達しました！");
 
-            // Play sound
-            player.playSound(player.getLocation(), Sound.ENTITY_PLAYER_LEVELUP, 1.0f, 1.0f);
+                // Play sound
+                player.playSound(player.getLocation(), Sound.ENTITY_PLAYER_LEVELUP, 1.0f, 1.0f);
 
-            // Update scoreboard
-            updateScoreboard();
+                // Update scoreboard
+                updateScoreboard();
 
-            // Check if enough players escaped for victory
-            if (teamManager.haveHalfPlayersEscaped()) {
-                endGameWithPlayerVictory();
+                // Check if enough players escaped for victory
+                if (teamManager.haveHalfPlayersEscaped()) {
+                    endGameWithPlayerVictory();
+                }
+            } else {
+                // Exit door is not open yet
+                player.sendMessage(ChatColor.RED + "出口のドアが閉まっています。鍵を使ってドアを開けましょう！");
             }
         }
     }
 
     /**
-     * Handle chest opened event
+     * Handle regular chest opened event
      */
     public void handleChestOpened(String chestName, Player player) {
         if (!gameRunning) return;
@@ -401,26 +426,60 @@ public class GameManager {
         if (!configManager.isChestOpened(chestName)) {
             configManager.setChestOpened(chestName, true);
             player.sendMessage(ChatColor.AQUA + "チェスト「" + chestName + "」を開封したよ！");
-
-            // Check if all chests opened
-            checkAllChestsOpened();
+            player.playSound(player.getLocation(), Sound.BLOCK_CHEST_OPEN, 1.0f, 1.0f);
         }
     }
 
     /**
-     * Check if all chests opened and open door if so
+     * Handle count chest opened event
+     */
+    public void handleCountChestOpened(String chestName, Player player) {
+        if (!gameRunning) return;
+
+        if (!configManager.isCountChestOpened(chestName)) {
+            configManager.setCountChestOpened(chestName, true);
+            player.sendMessage(ChatColor.GOLD + "カウントチェスト「" + chestName + "」を開封したよ！ " +
+                    configManager.getOpenedCountChestsCount() + "/" + configManager.getRequiredCountChests());
+            player.playSound(player.getLocation(), Sound.BLOCK_CHEST_OPEN, 1.0f, 1.0f);
+
+            // Check if enough count chests opened for exit key
+            checkRequiredCountChestsOpened();
+        }
+    }
+
+    /**
+     * Check if required count chests are opened and give exit key if so
+     */
+    private void checkRequiredCountChestsOpened() {
+        if (configManager.areEnoughCountChestsOpened()) {
+            Bukkit.broadcastMessage(ChatColor.GOLD + "必要な数のカウントチェストが開けられた！出口の鍵が出現したよ！");
+
+            // Give exit key to all player team members
+            for (Player p : Bukkit.getOnlinePlayers()) {
+                if (teamManager.isPlayerInPlayerTeam(p) &&
+                        p.getGameMode() != GameMode.SPECTATOR) {
+                    ItemStack exitKey = itemManager.createExitKeyItem();
+                    p.getInventory().addItem(exitKey);
+                    p.playSound(p.getLocation(), Sound.ENTITY_EXPERIENCE_ORB_PICKUP, 1.0f, 1.0f);
+                }
+            }
+        }
+    }
+
+    /**
+     * Check if all chests opened (for traditional gameplay)
+     * Note: Not used in the new count chest system, but kept for compatibility
      */
     private void checkAllChestsOpened() {
         if (configManager.areAllChestsOpened()) {
-            Bukkit.broadcastMessage(ChatColor.GOLD + "すべてのチェストが開けられた！玄関のドアが開くよ！");
-            openDoor();
+            Bukkit.broadcastMessage(ChatColor.GOLD + "すべてのチェストが開けられた！");
         }
     }
 
     /**
-     * Open the exit door
+     * Open the main door
      */
-    private void openDoor() {
+    public void openDoor() {
         Location doorLoc = configManager.getDoorLocation();
         if (doorLoc == null) {
             Bukkit.broadcastMessage(ChatColor.RED + "ドアが登録されていないので開けられません！");
@@ -428,7 +487,134 @@ public class GameManager {
         }
 
         Block block = doorLoc.getBlock();
-        block.setType(Material.AIR);
+
+        // ドアかどうかを確認
+        if (!block.getType().toString().contains("DOOR")) {
+            Bukkit.broadcastMessage(ChatColor.RED + "登録された場所にドアがありません！");
+            return;
+        }
+
+        // ドアを開く
+        BlockData blockData = block.getBlockData();
+        if (blockData instanceof Openable) {
+            Openable door = (Openable) blockData;
+            door.setOpen(true);
+            block.setBlockData(door);
+            doorOpened = true;
+
+            // Play sound for all players
+            for (Player p : Bukkit.getOnlinePlayers()) {
+                p.playSound(doorLoc, Sound.BLOCK_WOODEN_DOOR_OPEN, 1.0f, 1.0f);
+            }
+
+            Bukkit.broadcastMessage(ChatColor.GREEN + "メインのドアが開いた！奥のエリアへ進もう！");
+        } else {
+            // 従来の方法でドアを「破壊」する（フォールバック）
+            block.setType(Material.AIR);
+            doorOpened = true;
+
+            // Play sound for all players
+            for (Player p : Bukkit.getOnlinePlayers()) {
+                p.playSound(doorLoc, Sound.BLOCK_WOODEN_DOOR_OPEN, 1.0f, 1.0f);
+            }
+
+            Bukkit.broadcastMessage(ChatColor.GREEN + "メインのドアが開いた！奥のエリアへ進もう！");
+        }
+    }
+
+    /**
+     * Open the exit door (and close it after 3 seconds)
+     */
+    public void openExitDoor() {
+        Location exitDoorLoc = configManager.getExitDoorLocation();
+        if (exitDoorLoc == null) {
+            Bukkit.broadcastMessage(ChatColor.RED + "出口用ドアが登録されていないので開けられません！");
+            return;
+        }
+
+        Block block = exitDoorLoc.getBlock();
+
+        // ドアかどうかを確認
+        if (!block.getType().toString().contains("DOOR")) {
+            Bukkit.broadcastMessage(ChatColor.RED + "登録された場所にドアがありません！");
+            return;
+        }
+
+        // ドアを開く
+        BlockData blockData = block.getBlockData();
+        if (blockData instanceof Openable) {
+            Openable door = (Openable) blockData;
+            door.setOpen(true);
+            block.setBlockData(door);
+            exitDoorOpened = true;
+
+            // Play sound for all players
+            for (Player p : Bukkit.getOnlinePlayers()) {
+                p.playSound(exitDoorLoc, Sound.BLOCK_WOODEN_DOOR_OPEN, 1.0f, 1.0f);
+            }
+
+            Bukkit.broadcastMessage(ChatColor.GREEN + "出口のドアが開いた！急いで脱出しよう！3秒後に閉まります！");
+
+            // 既存の閉じるタスクをキャンセル
+            if (exitDoorCloseTask != null) {
+                exitDoorCloseTask.cancel();
+                exitDoorCloseTask = null;
+            }
+
+            // 3秒後にドアを閉じるタスクを設定
+            exitDoorCloseTask = new BukkitRunnable() {
+                @Override
+                public void run() {
+                    // ドアを閉じる
+                    if (exitDoorOpened && block.getBlockData() instanceof Openable) {
+                        Openable door = (Openable) block.getBlockData();
+                        door.setOpen(false);
+                        block.setBlockData(door);
+                        exitDoorOpened = false;
+
+                        // Play door close sound
+                        for (Player p : Bukkit.getOnlinePlayers()) {
+                            p.playSound(exitDoorLoc, Sound.BLOCK_WOODEN_DOOR_CLOSE, 1.0f, 1.0f);
+                        }
+
+                        Bukkit.broadcastMessage(ChatColor.RED + "出口のドアが閉まりました！");
+                        exitDoorCloseTask = null;
+                    }
+                }
+            }.runTaskLater(plugin, 3 * 20L); // 3秒 = 3 * 20 ticks
+        } else {
+            // 従来の方法でドアを「破壊」する（フォールバック）
+            block.setType(Material.AIR);
+            exitDoorOpened = true;
+
+            // Play sound for all players
+            for (Player p : Bukkit.getOnlinePlayers()) {
+                p.playSound(exitDoorLoc, Sound.BLOCK_WOODEN_DOOR_OPEN, 1.0f, 1.0f);
+            }
+
+            Bukkit.broadcastMessage(ChatColor.GREEN + "出口のドアが開いた！急いで脱出しよう！3秒後に閉まります！");
+
+            // 3秒後にドアを戻すタスク（フォールバック方式）
+            exitDoorCloseTask = new BukkitRunnable() {
+                @Override
+                public void run() {
+                    // ドアを元の状態に戻す
+                    Material originalType = Material.OAK_DOOR; // デフォルトのドアタイプ
+                    if (block.getType() == Material.AIR) {
+                        block.setType(originalType);
+                        exitDoorOpened = false;
+
+                        // Play door close sound
+                        for (Player p : Bukkit.getOnlinePlayers()) {
+                            p.playSound(exitDoorLoc, Sound.BLOCK_WOODEN_DOOR_CLOSE, 1.0f, 1.0f);
+                        }
+
+                        Bukkit.broadcastMessage(ChatColor.RED + "出口のドアが閉まりました！");
+                        exitDoorCloseTask = null;
+                    }
+                }
+            }.runTaskLater(plugin, 3 * 20L); // 3秒
+        }
     }
 
     // Getters and setters
@@ -442,5 +628,13 @@ public class GameManager {
 
     public Map<UUID, BukkitTask> getRespawnTasks() {
         return respawnTasks;
+    }
+
+    public boolean isDoorOpened() {
+        return doorOpened;
+    }
+
+    public boolean isExitDoorOpened() {
+        return exitDoorOpened;
     }
 }
