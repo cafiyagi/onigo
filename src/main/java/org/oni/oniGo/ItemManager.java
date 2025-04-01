@@ -39,6 +39,10 @@ public class ItemManager {
         ItemStack startBook = createGameStartBook();
         player.getInventory().addItem(startBook);
 
+        // Give chest count book
+        ItemStack chestCountBook = createChestCountBook();
+        player.getInventory().addItem(chestCountBook);
+
         // Give exit key (for testing)
         ItemStack exitKey = createExitKeyItem();
         player.getInventory().addItem(exitKey);
@@ -64,6 +68,17 @@ public class ItemManager {
         if (player != null && player.isOnline()) {
             ItemStack startBook = createGameStartBook();
             player.getInventory().addItem(startBook);
+        }
+    }
+
+    /**
+     * Give chest count book to a specific player
+     */
+    public void giveChestCountBook(String playerName) {
+        Player player = plugin.getServer().getPlayer(playerName);
+        if (player != null && player.isOnline()) {
+            ItemStack chestCountBook = createChestCountBook();
+            player.getInventory().addItem(chestCountBook);
         }
     }
 
@@ -169,10 +184,39 @@ public class ItemManager {
                 "§2[通常スタート]§r\n"+
                 "すべてのプレイヤーが陣営を選択した状態で実行するとゲームが開始します。\n\n"+
                 "§c[鬼スタート]§r\n"+
-                "クリックした人が鬼になります。他のプレイヤーは自動的にプレイヤー陣営に割り当てられます。");
+                "クリックした人が鬼になります。他のプレイヤーは自動的にプレイヤー陣営に割り当てられます。\n\n"+
+                "§d[ランダム鬼スタート]§r\n"+
+                "ランダムで1人を鬼に選びます。陣営選択せずにゲームを開始できます。");
         startBookMeta.setPages(startPages);
         startBook.setItemMeta(startBookMeta);
         return startBook;
+    }
+
+    /**
+     * Create chest count book
+     */
+    public ItemStack createChestCountBook() {
+        ItemStack chestCountBook = new ItemStack(Material.WRITTEN_BOOK);
+        BookMeta chestCountBookMeta = (BookMeta) chestCountBook.getItemMeta();
+        chestCountBookMeta.setTitle("チェスト設定本");
+        chestCountBookMeta.setAuthor("鬼ごっこプラグイン");
+        List<String> chestCountPages = new ArrayList<>();
+
+        // 登録済みチェスト数を取得
+        int totalChests = plugin.getConfigManager().getTotalCountChests();
+        int currentRequired = plugin.getConfigManager().getRequiredCountChests();
+
+        chestCountPages.add("§l§6★ カウントチェスト設定 ★§r\n\n"+
+                "現在の設定:\n" +
+                "・必要数: §e" + currentRequired + "§r個\n" +
+                "・登録済み: §e" + totalChests + "§r個\n\n" +
+                "§a[1個]§r - 簡単モード\n"+
+                "§e[3個]§r - 標準モード\n"+
+                "§c[5個]§r - 難しいモード\n"+
+                "§d[カスタム]§r - 数値入力(最大" + totalChests + "個)");
+        chestCountBookMeta.setPages(chestCountPages);
+        chestCountBook.setItemMeta(chestCountBookMeta);
+        return chestCountBook;
     }
 
     /**
@@ -225,5 +269,16 @@ public class ItemManager {
                 item.hasItemMeta() &&
                 item.getItemMeta() instanceof BookMeta &&
                 "ゲームスタート本".equals(((BookMeta) item.getItemMeta()).getTitle());
+    }
+
+    /**
+     * Check if an item is the chest count book
+     */
+    public boolean isChestCountBook(ItemStack item) {
+        return item != null &&
+                item.getType() == Material.WRITTEN_BOOK &&
+                item.hasItemMeta() &&
+                item.getItemMeta() instanceof BookMeta &&
+                "チェスト設定本".equals(((BookMeta) item.getItemMeta()).getTitle());
     }
 }

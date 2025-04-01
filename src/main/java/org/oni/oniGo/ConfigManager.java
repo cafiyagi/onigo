@@ -254,6 +254,13 @@ public class ConfigManager {
     }
 
     /**
+     * Get the total number of count chests
+     */
+    public int getTotalCountChests() {
+        return countChestLocations.size();
+    }
+
+    /**
      * Check if enough count chests are opened to get the exit key
      */
     public boolean areEnoughCountChestsOpened() {
@@ -353,9 +360,5 @@ public class ConfigManager {
 
     public int getRequiredCountChests() {
         return requiredCountChests;
-    }
-
-    public int getTotalCountChests() {
-        return countChestLocations.size();
     }
 }

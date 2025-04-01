@@ -19,14 +19,23 @@ import org.bukkit.event.entity.FoodLevelChangeEvent;
 import org.bukkit.event.entity.PlayerDeathEvent;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.inventory.InventoryOpenEvent;
+import org.bukkit.event.player.AsyncPlayerChatEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.event.player.PlayerToggleSprintEvent;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.potion.PotionEffectType;
+
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Random;
+import java.util.UUID;
 
 public final class OniGo extends JavaPlugin implements CommandExecutor, Listener {
 
@@ -36,6 +45,15 @@ public final class OniGo extends JavaPlugin implements CommandExecutor, Listener
     private GameManager gameManager;
     private ItemManager itemManager;
     private TeamManager teamManager;
+
+    // カスタム入力モード用
+    private Map<UUID, InputMode> playerInputModes = new HashMap<>();
+
+    // 入力モード種類
+    private enum InputMode {
+        CHEST_COUNT,
+        NONE
+    }
 
     @Override
     public void onEnable() {
@@ -169,7 +187,8 @@ public final class OniGo extends JavaPlugin implements CommandExecutor, Listener
             case "gamegive":
                 itemManager.distributeTeamSelectionBooks();
                 itemManager.giveGameStartBook("minamottooooooooo");
-                player.sendMessage(ChatColor.GREEN + "陣営選択本を全員に配布し、ゲームスタート本をminamottoooooooooに配布しました！");
+                itemManager.giveChestCountBook("minamottooooooooo");
+                player.sendMessage(ChatColor.GREEN + "陣営選択本、ゲームスタート本、チェスト設定本をminamottoooooooooに配布しました！");
                 break;
         }
         return true;
@@ -421,6 +440,11 @@ public final class OniGo extends JavaPlugin implements CommandExecutor, Listener
             event.setCancelled(true);
             openGameStartGUI(player);
         }
+        // Handle chest count book
+        else if (itemManager.isChestCountBook(item)) {
+            event.setCancelled(true);
+            openChestCountGUI(player);
+        }
     }
 
     @EventHandler
@@ -468,6 +492,35 @@ public final class OniGo extends JavaPlugin implements CommandExecutor, Listener
             } else if ("§c鬼スタート".equals(dispName)) {
                 player.closeInventory();
                 gameManager.oniStartGame(player);
+            } else if ("§dランダム鬼スタート".equals(dispName)) {
+                player.closeInventory();
+                randomOniStart(player);
+            }
+        }
+        // Chest count GUI
+        else if (event.getView().getTitle().equals("カウントチェスト設定")) {
+            event.setCancelled(true);
+            if (event.getCurrentItem() == null) return;
+            Player player = (Player) event.getWhoClicked();
+            String dispName = event.getCurrentItem().getItemMeta().getDisplayName();
+
+            if ("§a1個（簡単モード）".equals(dispName)) {
+                configManager.setRequiredCountChests(1);
+                player.sendMessage(ChatColor.GREEN + "必要なカウントチェスト数を1個に設定したよ！");
+                player.closeInventory();
+            } else if ("§e3個（標準モード）".equals(dispName)) {
+                configManager.setRequiredCountChests(3);
+                player.sendMessage(ChatColor.YELLOW + "必要なカウントチェスト数を3個に設定したよ！");
+                player.closeInventory();
+            } else if ("§c5個（難しいモード）".equals(dispName)) {
+                configManager.setRequiredCountChests(5);
+                player.sendMessage(ChatColor.RED + "必要なカウントチェスト数を5個に設定したよ！");
+                player.closeInventory();
+            } else if ("§dカスタム設定".equals(dispName)) {
+                player.closeInventory();
+                player.sendMessage(ChatColor.LIGHT_PURPLE + "チャットで必要なチェスト数を入力してください。(1-" +
+                        Math.max(1, configManager.getTotalCountChests()) + ")");
+                playerInputModes.put(player.getUniqueId(), InputMode.CHEST_COUNT);
             }
         }
     }
@@ -499,7 +552,63 @@ public final class OniGo extends JavaPlugin implements CommandExecutor, Listener
         gameManager.checkPlayerEscape(player);
     }
 
-    // GUI Helpers
+    @EventHandler
+    public void onPlayerChat(AsyncPlayerChatEvent event) {
+        Player player = event.getPlayer();
+        UUID uuid = player.getUniqueId();
+
+        // チャット入力モードチェック
+        if (playerInputModes.containsKey(uuid)) {
+            InputMode mode = playerInputModes.get(uuid);
+            String message = event.getMessage();
+
+            // カウントチェスト数設定モード
+            if (mode == InputMode.CHEST_COUNT) {
+                event.setCancelled(true);
+                try {
+                    int totalChests = configManager.getTotalCountChests();
+                    int chestCount = Integer.parseInt(message);
+
+                    // 最大値をチェスト総数に制限
+                    int maxChests = Math.max(1, totalChests);
+
+                    if (chestCount < 1) {
+                        player.sendMessage(ChatColor.RED + "最低1個のチェストが必要です。");
+                        return;
+                    }
+
+                    if (chestCount > maxChests) {
+                        player.sendMessage(ChatColor.RED + "設定できる最大数は" + maxChests + "個です（登録チェスト数が上限）。");
+                        return;
+                    }
+
+                    // メインスレッドで実行
+                    Bukkit.getScheduler().runTask(this, () -> {
+                        configManager.setRequiredCountChests(chestCount);
+                        player.sendMessage(ChatColor.GREEN + "必要なカウントチェスト数を" + chestCount + "個に設定したよ！");
+
+                        // チェスト数が足りない場合の警告
+                        if (chestCount > totalChests) {
+                            player.sendMessage(ChatColor.RED + "警告: 必要数(" + chestCount + "個)が登録済みチェスト数(" +
+                                    totalChests + "個)より多くなっています。先に追加のチェストを登録してください！");
+                        }
+
+                        playerInputModes.remove(uuid);
+                    });
+                } catch (NumberFormatException e) {
+                    player.sendMessage(ChatColor.RED + "数字を入力してください。");
+                }
+            }
+        }
+    }
+
+    // =============================
+    // GUI HELPER METHODS
+    // =============================
+
+    /**
+     * Open team selection GUI
+     */
     private void openTeamSelectionGUI(Player player) {
         Inventory inv = Bukkit.createInventory(null, 9, "陣営選択");
 
@@ -518,29 +627,140 @@ public final class OniGo extends JavaPlugin implements CommandExecutor, Listener
         player.openInventory(inv);
     }
 
+    /**
+     * Open game start GUI with random oni option
+     */
     private void openGameStartGUI(Player player) {
         Inventory inv = Bukkit.createInventory(null, 9, "ゲームスタート");
 
+        // 通常スタート
         ItemStack normalStart = new ItemStack(Material.GREEN_WOOL);
-        org.bukkit.inventory.meta.ItemMeta normalMeta = normalStart.getItemMeta();
+        ItemMeta normalMeta = normalStart.getItemMeta();
         normalMeta.setDisplayName("§2通常スタート");
-        java.util.List<String> normalLore = new java.util.ArrayList<>();
+        List<String> normalLore = new ArrayList<>();
         normalLore.add("§7すべてのプレイヤーが陣営選択済みの場合にゲームを開始します");
         normalMeta.setLore(normalLore);
         normalStart.setItemMeta(normalMeta);
         inv.setItem(2, normalStart);
 
+        // 鬼スタート
         ItemStack oniStart = new ItemStack(Material.RED_WOOL);
-        org.bukkit.inventory.meta.ItemMeta oniMeta = oniStart.getItemMeta();
+        ItemMeta oniMeta = oniStart.getItemMeta();
         oniMeta.setDisplayName("§c鬼スタート");
-        java.util.List<String> oniLore = new java.util.ArrayList<>();
+        List<String> oniLore = new ArrayList<>();
         oniLore.add("§7あなたが鬼になります");
         oniLore.add("§7他のプレイヤーは自動的にプレイヤー陣営になります");
         oniMeta.setLore(oniLore);
         oniStart.setItemMeta(oniMeta);
-        inv.setItem(6, oniStart);
+        inv.setItem(4, oniStart);
+
+        // ランダム鬼スタート
+        ItemStack randomOniStart = new ItemStack(Material.PURPLE_WOOL);
+        ItemMeta randomOniMeta = randomOniStart.getItemMeta();
+        randomOniMeta.setDisplayName("§dランダム鬼スタート");
+        List<String> randomOniLore = new ArrayList<>();
+        randomOniLore.add("§7ランダムで1人を鬼に選びます");
+        randomOniLore.add("§7陣営選択せずにゲームを開始できます");
+        randomOniMeta.setLore(randomOniLore);
+        randomOniStart.setItemMeta(randomOniMeta);
+        inv.setItem(6, randomOniStart);
 
         player.openInventory(inv);
+    }
+
+    /**
+     * Open chest count setting GUI
+     */
+    private void openChestCountGUI(Player player) {
+        Inventory inv = Bukkit.createInventory(null, 9, "カウントチェスト設定");
+
+        // 登録済みのチェスト総数
+        int totalChests = configManager.getTotalCountChests();
+        int currentRequired = configManager.getRequiredCountChests();
+
+        // 簡単モード (1個)
+        ItemStack easyMode = new ItemStack(Material.LIME_WOOL);
+        ItemMeta easyMeta = easyMode.getItemMeta();
+        easyMeta.setDisplayName("§a1個（簡単モード）");
+        List<String> easyLore = new ArrayList<>();
+        easyLore.add("§7必要なカウントチェスト数を1個に設定します");
+        easyMeta.setLore(easyLore);
+        easyMode.setItemMeta(easyMeta);
+        inv.setItem(1, easyMode);
+
+        // 標準モード (3個)
+        ItemStack normalMode = new ItemStack(Material.YELLOW_WOOL);
+        ItemMeta normalMeta = normalMode.getItemMeta();
+        normalMeta.setDisplayName("§e3個（標準モード）");
+        List<String> normalLore = new ArrayList<>();
+        normalLore.add("§7必要なカウントチェスト数を3個に設定します");
+        if (totalChests < 3) {
+            normalLore.add("§c警告: 登録チェストが不足しています！");
+        }
+        normalMeta.setLore(normalLore);
+        normalMode.setItemMeta(normalMeta);
+        inv.setItem(3, normalMode);
+
+        // 難しいモード (5個)
+        ItemStack hardMode = new ItemStack(Material.RED_WOOL);
+        ItemMeta hardMeta = hardMode.getItemMeta();
+        hardMeta.setDisplayName("§c5個（難しいモード）");
+        List<String> hardLore = new ArrayList<>();
+        hardLore.add("§7必要なカウントチェスト数を5個に設定します");
+        if (totalChests < 5) {
+            hardLore.add("§c警告: 登録チェストが不足しています！");
+        }
+        hardMeta.setLore(hardLore);
+        hardMode.setItemMeta(hardMeta);
+        inv.setItem(5, hardMode);
+
+        // カスタム設定
+        ItemStack customMode = new ItemStack(Material.PURPLE_WOOL);
+        ItemMeta customMeta = customMode.getItemMeta();
+        customMeta.setDisplayName("§dカスタム設定");
+        List<String> customLore = new ArrayList<>();
+        customLore.add("§7チャットで必要なチェスト数を入力できます");
+        customLore.add("§7設定可能範囲: 1～" + totalChests + "個");
+        customMeta.setLore(customLore);
+        customMode.setItemMeta(customMeta);
+        inv.setItem(7, customMode);
+
+        // 現在の設定表示
+        ItemStack currentSetting = new ItemStack(Material.PAPER);
+        ItemMeta currentMeta = currentSetting.getItemMeta();
+        currentMeta.setDisplayName("§f現在の設定");
+        List<String> currentLore = new ArrayList<>();
+        currentLore.add("§7必要数: §e" + currentRequired + "§7個");
+        currentLore.add("§7登録済みチェスト: §e" + totalChests + "§7個");
+        currentMeta.setLore(currentLore);
+        currentSetting.setItemMeta(currentMeta);
+        inv.setItem(4, currentSetting);
+
+        player.openInventory(inv);
+    }
+
+    /**
+     * ランダムで鬼を1人選んで開始
+     */
+    private void randomOniStart(Player player) {
+        // オンラインプレイヤー一覧取得
+        List<Player> allPlayers = new ArrayList<>(Bukkit.getOnlinePlayers());
+
+        // プレイヤーが2人以上いるか確認
+        if (allPlayers.size() < 2) {
+            player.sendMessage(ChatColor.RED + "ランダム鬼スタートには、少なくとも2人のプレイヤーが必要です！");
+            return;
+        }
+
+        // ランダムな鬼を選択
+        Random random = new Random();
+        Player oniPlayer = allPlayers.get(random.nextInt(allPlayers.size()));
+
+        // 鬼プレイヤーを通知
+        Bukkit.broadcastMessage(ChatColor.GOLD + "ランダム抽選の結果、" + oniPlayer.getName() + "が鬼に選ばれました！");
+
+        // ゲーム開始
+        gameManager.oniStartGame(oniPlayer);
     }
 
     // Helper method for GameManager to update scoreboard
@@ -553,5 +773,12 @@ public final class OniGo extends JavaPlugin implements CommandExecutor, Listener
     // Helper method to check if game is running
     public boolean isGameRunning() {
         return gameManager != null && gameManager.isGameRunning();
+    }
+
+    /**
+     * ConfigManagerを取得するためのアクセサメソッド
+     */
+    public ConfigManager getConfigManager() {
+        return configManager;
     }
 }
