@@ -9,6 +9,7 @@ import org.bukkit.boss.BarStyle;
 import org.bukkit.boss.BossBar;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.potion.PotionEffect;
 import org.bukkit.potion.PotionEffectType;
 import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.scheduler.BukkitTask;
@@ -163,7 +164,6 @@ public class GameManager {
 
         exitDoorOpened = false;
         resetExitDoor();
-
     }
 
     private void resetExitDoor() {
@@ -233,6 +233,39 @@ public class GameManager {
         // スコアボード更新
         updateScoreboard();
 
+        // 各鬼タイプの初期効果適用
+        for (Player p : Bukkit.getOnlinePlayers()) {
+            if (teamManager.isPlayerInOniTeam(p)) {
+                OniType oniType = teamManager.getPlayerOniType(p);
+
+                // 鬼タイプの名前と説明をアナウンス
+                Bukkit.broadcastMessage(ChatColor.RED + p.getName() + " は「" + oniType.getDisplayName() + "」として参戦！");
+                Bukkit.broadcastMessage(ChatColor.YELLOW + "能力: " + oniType.getDescription());
+
+                // 鬼タイプごとの初期効果
+                switch (oniType) {
+                    case KISHA:
+                        // 鬼叉は最高速度（通常の鬼より速い）
+                        p.addPotionEffect(new PotionEffect(PotionEffectType.SLOWNESS, 999999, 2, false, false));
+                        break;
+                    case ANSHA:
+                        // 闇叉はプレイヤーの1.2倍速
+                        p.addPotionEffect(new PotionEffect(PotionEffectType.SPEED, 999999, 1, false, false));
+                        // 常に暗闇2
+                        p.addPotionEffect(new PotionEffect(PotionEffectType.DARKNESS, 999999, 2, false, false));
+                        break;
+                    case GETUGA:
+                        // 月牙はプレイヤーの1.5倍速
+                        p.addPotionEffect(new PotionEffect(PotionEffectType.SPEED, 999999, 2, false, false));
+                        break;
+                    default:
+                        // 夜叉はスロウ
+                        p.addPotionEffect(new PotionEffect(PotionEffectType.SLOWNESS, 999999, 2, false, false));
+                        break;
+                }
+            }
+        }
+
         Bukkit.broadcastMessage(ChatColor.GREEN + "ゲームスタート！残り時間：" + remainingTime + "秒");
     }
 
@@ -244,6 +277,12 @@ public class GameManager {
             itemManager.clearPlayerInventory(p);
         }
         teamManager.setupOniStart(oniPlayer);
+
+        // 鬼タイプが設定されていない場合はデフォルトで夜叉に
+        if (teamManager.getPlayerOniType(oniPlayer) == null) {
+            teamManager.setPlayerOniType(oniPlayer, OniType.YASHA);
+        }
+
         startGame(oniPlayer);
     }
 
@@ -438,7 +477,7 @@ public class GameManager {
                 };
                 int randomIndex = (int)(Math.random() * oniSpawns.length);
                 p.teleport(oniSpawns[randomIndex]);
-                p.setFoodLevel(2);
+                p.setFoodLevel(20); // 鬼叉のために空腹ゲージを最大に
                 p.setGameMode(GameMode.ADVENTURE);
             } else if (teamManager.isPlayerInPlayerTeam(p)) {
                 p.teleport(new Location(p.getWorld(), 0, 2, 0));
@@ -624,6 +663,12 @@ public class GameManager {
         if (!gameRunning) return;
         if (!teamManager.isPlayerInOniTeam(oniPlayer)) return;
 
+        // 夜叉タイプのみ使用可能なアイテム（チェストコンパス）
+        if (teamManager.getPlayerOniType(oniPlayer) != OniType.YASHA) {
+            oniPlayer.sendMessage(ChatColor.RED + "夜叉タイプのみが使用できるアイテムだよ！");
+            return;
+        }
+
         UUID oniUuid = oniPlayer.getUniqueId();
         if (itemManager.isChestDetectorOnCooldown(oniUuid)) {
             int remain = itemManager.getChestDetectorRemainingCooldown(oniUuid);
@@ -695,6 +740,12 @@ public class GameManager {
     public void teleportToNearbyChest(Player oniPlayer) {
         if (!gameRunning) return;
         if (!teamManager.isPlayerInOniTeam(oniPlayer)) return;
+
+        // 夜叉タイプのみ使用可能なアイテム（チェストワープ）
+        if (teamManager.getPlayerOniType(oniPlayer) != OniType.YASHA) {
+            oniPlayer.sendMessage(ChatColor.RED + "夜叉タイプのみが使用できるアイテムだよ！");
+            return;
+        }
 
         UUID oniUuid = oniPlayer.getUniqueId();
         if (itemManager.isChestTeleporterOnCooldown(oniUuid)) {
@@ -809,7 +860,7 @@ public class GameManager {
         Random rand = new Random();
         Location targetLoc = chestLocs.get(rand.nextInt(chestLocs.size())).clone().add(0,1,0);
         // 暗闇
-        player.addPotionEffect(new org.bukkit.potion.PotionEffect(PotionEffectType.BLINDNESS, 20 * 3, 1, false, false));
+        player.addPotionEffect(new PotionEffect(PotionEffectType.BLINDNESS, 20 * 3, 1, false, false));
         player.playSound(player.getLocation(), Sound.ENTITY_ENDERMAN_TELEPORT, 1f, 1f);
 
         // テレポート
@@ -992,5 +1043,10 @@ public class GameManager {
 
     public int getRemainingChests() {
         return remainingChests;
+    }
+
+    // 新規メソッド: プレイヤーの残機を取得
+    public Map<UUID, Integer> getPlayerLives() {
+        return playerLives;
     }
 }

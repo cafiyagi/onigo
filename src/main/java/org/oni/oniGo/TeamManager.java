@@ -21,6 +21,9 @@ public class TeamManager {
     // 出口ドア開けたプレイヤー（不要なら削除してOKだが、とりあえず保持）
     private Set<UUID> doorOpenedPlayers = new HashSet<>();
 
+    // 鬼タイプを管理するマップを追加
+    private Map<UUID, OniType> playerOniTypes = new HashMap<>();
+
     public TeamManager(OniGo plugin) {
         this.plugin = plugin;
         setupScoreboard();
@@ -66,6 +69,7 @@ public class TeamManager {
     public void resetTeams() {
         escapedPlayers.clear();
         doorOpenedPlayers.clear();
+        playerOniTypes.clear(); // 鬼タイプもリセット
 
         if (playerTeam != null) playerTeam.unregister();
         if (oniTeam != null) oniTeam.unregister();
@@ -221,5 +225,14 @@ public class TeamManager {
 
     public Set<UUID> getDoorOpenedPlayers() {
         return doorOpenedPlayers;
+    }
+
+    // 鬼タイプ関連のメソッドを追加
+    public void setPlayerOniType(Player player, OniType type) {
+        playerOniTypes.put(player.getUniqueId(), type);
+    }
+
+    public OniType getPlayerOniType(Player player) {
+        return playerOniTypes.getOrDefault(player.getUniqueId(), OniType.YASHA); // デフォルトは夜叉
     }
 }
