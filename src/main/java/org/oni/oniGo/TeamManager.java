@@ -21,8 +21,9 @@ public class TeamManager {
     // 出口ドア開けたプレイヤー（不要なら削除してOKだが、とりあえず保持）
     private Set<UUID> doorOpenedPlayers = new HashSet<>();
 
-    // 鬼タイプを管理するマップを追加
+    // 鬼タイプ管理
     private Map<UUID, OniType> playerOniTypes = new HashMap<>();
+    private Map<UUID, Integer> playerHitCounts = new HashMap<>(); // 攻撃カウント
 
     public TeamManager(OniGo plugin) {
         this.plugin = plugin;
@@ -66,10 +67,34 @@ public class TeamManager {
         oniTeam.addEntry(player.getName());
     }
 
+    public void setPlayerOniType(Player player, OniType type) {
+        playerOniTypes.put(player.getUniqueId(), type);
+        // 攻撃カウントをリセット
+        playerHitCounts.put(player.getUniqueId(), 0);
+    }
+
+    public OniType getPlayerOniType(Player player) {
+        return playerOniTypes.getOrDefault(player.getUniqueId(), OniType.YASHA);
+    }
+
+    public int getPlayerHitCount(Player player) {
+        return playerHitCounts.getOrDefault(player.getUniqueId(), 0);
+    }
+
+    public void incrementPlayerHitCount(Player player) {
+        int count = getPlayerHitCount(player);
+        playerHitCounts.put(player.getUniqueId(), count + 1);
+    }
+
+    public void resetPlayerHitCount(Player player) {
+        playerHitCounts.put(player.getUniqueId(), 0);
+    }
+
     public void resetTeams() {
         escapedPlayers.clear();
         doorOpenedPlayers.clear();
-        playerOniTypes.clear(); // 鬼タイプもリセット
+        playerOniTypes.clear();
+        playerHitCounts.clear();
 
         if (playerTeam != null) playerTeam.unregister();
         if (oniTeam != null) oniTeam.unregister();
@@ -225,14 +250,5 @@ public class TeamManager {
 
     public Set<UUID> getDoorOpenedPlayers() {
         return doorOpenedPlayers;
-    }
-
-    // 鬼タイプ関連のメソッドを追加
-    public void setPlayerOniType(Player player, OniType type) {
-        playerOniTypes.put(player.getUniqueId(), type);
-    }
-
-    public OniType getPlayerOniType(Player player) {
-        return playerOniTypes.getOrDefault(player.getUniqueId(), OniType.YASHA); // デフォルトは夜叉
     }
 }

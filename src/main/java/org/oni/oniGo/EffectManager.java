@@ -2,12 +2,15 @@ package org.oni.oniGo;
 
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
+import org.bukkit.GameMode;
+import org.bukkit.Location;
 import org.bukkit.Sound;
 import org.bukkit.entity.Player;
 import org.bukkit.potion.PotionEffect;
 import org.bukkit.potion.PotionEffectType;
 import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.scheduler.BukkitTask;
+import org.bukkit.util.Vector;
 
 import java.util.*;
 
@@ -24,23 +27,19 @@ public class EffectManager {
     public static final String ONISONG1_SOUND = "minecraft:onisong1";
     public static final String ONISONG2_SOUND = "minecraft:onisong2";
 
-    // 追加: カスタムサウンド定数
-    public static final String KISYA_SOUND = "minecraft:kisya";
-    public static final String TOSSIN_SOUND = "minecraft:tossin";
-    public static final String TEISI_SOUND = "minecraft:teisi";
-    public static final String KANABO_SOUND = "minecraft:kanabo";
-    public static final String ANSYA_SOUND = "minecraft:ansya";
-    public static final String ANTEN_SOUND = "minecraft:anten";
-    public static final String TUKI_SOUND = "minecraft:tuki";
-    public static final String MIKADUKI_SOUND = "minecraft:mikaduki";
-    public static final String SATSUKI_SOUND = "minecraft:satsuki";
-
     // Kakure Dama (隠れ玉)
     private Map<UUID, Integer> kakureDamaRemaining = new HashMap<>();
     private Map<UUID, BukkitTask> kakureDamaTask = new HashMap<>();
 
     // 鬼用スロウタスク
     private BukkitTask oniSlownessTask;
+
+    // 追加フィールド
+    private Map<UUID, BukkitTask> kishaGoldClubTasks = new HashMap<>(); // 鬼叉の金棒効果
+    private Map<UUID, BukkitTask> anshaDarknessTasks = new HashMap<>(); // 闇叉の暗闇状態
+    private Map<UUID, BukkitTask> playerDarknessTasks = new HashMap<>(); // 闇叉の暗転効果
+    private Map<UUID, BukkitTask> getsugaKillMoonTasks = new HashMap<>(); // 月牙の殺月効果
+    private boolean killMoonActive = false;
 
     public EffectManager(OniGo plugin, TeamManager teamManager) {
         this.plugin = plugin;
@@ -113,9 +112,6 @@ public class EffectManager {
                     }
                     cancel();
                     reverseFadeTask = null;
-
-                    // 鬼の足を遅いままにする (修正: スロウ効果を継続させる)
-                    startOniSlownessTask();
                 }
             }
         }.runTaskTimer(plugin, 0L, 60L);
@@ -191,125 +187,6 @@ public class EffectManager {
     }
 
     /**
-     * 鬼突進スキル使用
-     */
-    public void useOniTossinSkill(Player player) {
-        // 突進音を再生
-        for (Player p : Bukkit.getOnlinePlayers()) {
-            p.playSound(p.getLocation(), TOSSIN_SOUND, 1.0f, 1.0f);
-        }
-
-        // 鬼側のみテキスト表示
-        if (teamManager.isPlayerInOniTeam(player)) {
-            player.sendTitle(ChatColor.RED + "突進スキル発動！", "", 10, 30, 10);
-        }
-
-        // 突進のロジックはここに実装（速度上昇など）
-        player.addPotionEffect(new PotionEffect(PotionEffectType.SPEED, 20 * 3, 2, false, false));
-    }
-
-    /**
-     * 鬼停止スキル使用
-     */
-    public void useOniTeisiSkill(Player player) {
-        // 停止音を再生
-        for (Player p : Bukkit.getOnlinePlayers()) {
-            p.playSound(p.getLocation(), TEISI_SOUND, 1.0f, 1.0f);
-        }
-
-        // 鬼側のみテキスト表示
-        if (teamManager.isPlayerInOniTeam(player)) {
-            player.sendTitle(ChatColor.RED + "停止スキル発動！", "", 10, 30, 10);
-        }
-
-        // 範囲内のプレイヤーを停止させるロジック
-        double radius = 10.0;
-        for (Player target : Bukkit.getOnlinePlayers()) {
-            if (teamManager.isPlayerInPlayerTeam(target) &&
-                    target.getLocation().distance(player.getLocation()) <= radius) {
-                target.addPotionEffect(new PotionEffect(PotionEffectType.SLOWNESS, 20 * 5, 4, false, false));
-            }
-        }
-    }
-
-    /**
-     * 鬼金棒スキル使用
-     */
-    public void useOniKanaboSkill(Player player) {
-        // 金棒音を再生
-        for (Player p : Bukkit.getOnlinePlayers()) {
-            p.playSound(p.getLocation(), KANABO_SOUND, 1.0f, 1.0f);
-        }
-
-        // 鬼側のみテキスト表示
-        if (teamManager.isPlayerInOniTeam(player)) {
-            player.sendTitle(ChatColor.RED + "金棒スキル発動！", "", 10, 30, 10);
-        }
-
-        // 金棒のロジックはここに実装（攻撃力上昇など）
-        player.addPotionEffect(new PotionEffect(PotionEffectType.STRENGTH, 20 * 5, 1, false, false));
-    }
-
-    /**
-     * 暗転スキル使用
-     */
-    public void useAntenSkill(Player player) {
-        // 暗転音を再生
-        for (Player p : Bukkit.getOnlinePlayers()) {
-            p.playSound(p.getLocation(), ANTEN_SOUND, 1.0f, 1.0f);
-        }
-
-        // 鬼側のみテキスト表示
-        if (teamManager.isPlayerInOniTeam(player)) {
-            player.sendTitle(ChatColor.DARK_PURPLE + "暗転スキル発動！", "", 10, 30, 10);
-        }
-
-        // 暗転のロジック
-        for (Player target : Bukkit.getOnlinePlayers()) {
-            if (teamManager.isPlayerInPlayerTeam(target)) {
-                target.addPotionEffect(new PotionEffect(PotionEffectType.BLINDNESS, 20 * 5, 1, false, false));
-            }
-        }
-    }
-
-    /**
-     * 三日月スキル使用
-     */
-    public void useMikadukiSkill(Player player) {
-        // 三日月音を再生
-        for (Player p : Bukkit.getOnlinePlayers()) {
-            p.playSound(p.getLocation(), MIKADUKI_SOUND, 1.0f, 1.0f);
-        }
-
-        // 鬼側のみテキスト表示
-        if (teamManager.isPlayerInOniTeam(player)) {
-            player.sendTitle(ChatColor.BLUE + "三日月スキル発動！", "", 10, 30, 10);
-        }
-
-        // 三日月のロジック
-        player.addPotionEffect(new PotionEffect(PotionEffectType.NIGHT_VISION, 20 * 20, 0, false, false));
-        player.addPotionEffect(new PotionEffect(PotionEffectType.SPEED, 20 * 10, 1, false, false));
-    }
-
-    /**
-     * 殺月スキル使用
-     */
-    public void useSatsukiSkill(Player player) {
-        // 殺月音を再生
-        for (Player p : Bukkit.getOnlinePlayers()) {
-            p.playSound(p.getLocation(), SATSUKI_SOUND, 1.0f, 1.0f);
-        }
-
-        // 鬼側のみテキスト表示
-        if (teamManager.isPlayerInOniTeam(player)) {
-            player.sendTitle(ChatColor.DARK_RED + "殺月スキル発動！", "", 10, 30, 10);
-        }
-
-        // 殺月のロジック
-        player.addPotionEffect(new PotionEffect(PotionEffectType.STRENGTH, 20 * 10, 2, false, false));
-    }
-
-    /**
      * 全エフェクト解除
      */
     public void clearAllEffects() {
@@ -326,19 +203,21 @@ public class EffectManager {
         }
         kakureDamaTask.clear();
 
+        // 追加エフェクト解除
+        for (BukkitTask task : kishaGoldClubTasks.values()) task.cancel();
+        kishaGoldClubTasks.clear();
+        for (BukkitTask task : anshaDarknessTasks.values()) task.cancel();
+        anshaDarknessTasks.clear();
+        for (BukkitTask task : playerDarknessTasks.values()) task.cancel();
+        playerDarknessTasks.clear();
+        for (BukkitTask task : getsugaKillMoonTasks.values()) task.cancel();
+        getsugaKillMoonTasks.clear();
+        killMoonActive = false;
+
         for (Player p : Bukkit.getOnlinePlayers()) {
             clearAllPotionEffects(p);
             p.stopSound(ONISONG1_SOUND);
             p.stopSound(ONISONG2_SOUND);
-            p.stopSound(KISYA_SOUND);
-            p.stopSound(TOSSIN_SOUND);
-            p.stopSound(TEISI_SOUND);
-            p.stopSound(KANABO_SOUND);
-            p.stopSound(ANSYA_SOUND);
-            p.stopSound(ANTEN_SOUND);
-            p.stopSound(TUKI_SOUND);
-            p.stopSound(MIKADUKI_SOUND);
-            p.stopSound(SATSUKI_SOUND);
             p.setFoodLevel(20);
         }
     }
@@ -361,17 +240,183 @@ public class EffectManager {
         }
     }
 
-    // 勝利時のサウンド再生
-    public void playOniVictorySound() {
-        for (Player p : Bukkit.getOnlinePlayers()) {
-            p.playSound(p.getLocation(), Sound.ENTITY_WITHER_DEATH, 1.0f, 1.0f);
-        }
+    // 鬼叉の突進効果
+    public void startKishaDashEffect(Player player) {
+        player.addPotionEffect(new PotionEffect(PotionEffectType.SPEED, 20 * 5, 2, false, true));
+        player.sendMessage(ChatColor.GOLD + "突進発動！5秒間速度上昇");
     }
 
-    public void playPlayerVictorySound() {
+    // 鬼叉の停止効果
+    public void startKishaFreezeEffect(Player player) {
         for (Player p : Bukkit.getOnlinePlayers()) {
-            p.playSound(p.getLocation(), Sound.UI_TOAST_CHALLENGE_COMPLETE, 1.0f, 1.0f);
+            if (teamManager.isPlayerInPlayerTeam(p) && p.getGameMode() != GameMode.SPECTATOR) {
+                p.addPotionEffect(new PotionEffect(PotionEffectType.getByName("SLOW"), 20 * 2, 255, false, true));
+                p.addPotionEffect(new PotionEffect(PotionEffectType.getByName("JUMP"), 20 * 2, 128, false, true));
+                p.sendMessage(ChatColor.AQUA + "鬼叉の能力で2秒間動けなくなった！");
+            }
         }
+        player.sendMessage(ChatColor.AQUA + "停止発動！全プレイヤーを2秒間停止させた");
+    }
+
+    // 鬼叉の金棒効果
+    public void startKishaGoldClubEffect(Player player) {
+        UUID pid = player.getUniqueId();
+        if (kishaGoldClubTasks.containsKey(pid)) {
+            kishaGoldClubTasks.get(pid).cancel();
+        }
+
+        player.sendMessage(ChatColor.YELLOW + "金棒発動！30秒間一撃必殺");
+
+        BukkitTask task = new BukkitRunnable() {
+            @Override
+            public void run() {
+                player.sendMessage(ChatColor.RED + "金棒の効果が切れた");
+                kishaGoldClubTasks.remove(pid);
+            }
+        }.runTaskLater(plugin, 20 * 30); // 30秒後
+
+        kishaGoldClubTasks.put(pid, task);
+    }
+
+    // 金棒効果中かどうか
+    public boolean isKishaGoldClubActive(Player player) {
+        return kishaGoldClubTasks.containsKey(player.getUniqueId());
+    }
+
+    // 闇叉の常時暗闇効果
+    public void applyAnshaPermaDarkness(Player player) {
+        UUID pid = player.getUniqueId();
+
+        BukkitTask task = new BukkitRunnable() {
+            @Override
+            public void run() {
+                if (!plugin.isGameRunning()) {
+                    this.cancel();
+                    anshaDarknessTasks.remove(pid);
+                    return;
+                }
+                // 闇叉の暗転効果中でなければ暗闇付与
+                player.addPotionEffect(new PotionEffect(PotionEffectType.DARKNESS, 40, 2, false, false));
+            }
+        }.runTaskTimer(plugin, 0L, 20L);
+
+        anshaDarknessTasks.put(pid, task);
+    }
+
+    // 闇叉の暗転効果
+    public void startAnshaDarknessEffect(Player player) {
+        // 闇叉は暗闇から解放される
+        if (anshaDarknessTasks.containsKey(player.getUniqueId())) {
+            BukkitTask task = anshaDarknessTasks.get(player.getUniqueId());
+            task.cancel();
+            anshaDarknessTasks.remove(player.getUniqueId());
+        }
+        player.removePotionEffect(PotionEffectType.DARKNESS);
+
+        // プレイヤーに強い暗闇をかける
+        for (Player p : Bukkit.getOnlinePlayers()) {
+            if (teamManager.isPlayerInPlayerTeam(p) && p.getGameMode() != GameMode.SPECTATOR) {
+                p.addPotionEffect(new PotionEffect(PotionEffectType.DARKNESS, 20 * 10, 3, false, false));
+                p.sendMessage(ChatColor.DARK_PURPLE + "闇叉の能力で強い暗闇に包まれた！");
+
+                // 10秒後に解除
+                UUID pid = p.getUniqueId();
+                if (playerDarknessTasks.containsKey(pid)) {
+                    playerDarknessTasks.get(pid).cancel();
+                }
+
+                BukkitTask task = new BukkitRunnable() {
+                    @Override
+                    public void run() {
+                        p.removePotionEffect(PotionEffectType.DARKNESS);
+                        playerDarknessTasks.remove(pid);
+                    }
+                }.runTaskLater(plugin, 20 * 10);
+
+                playerDarknessTasks.put(pid, task);
+            }
+        }
+
+        player.sendMessage(ChatColor.DARK_PURPLE + "暗転発動！10秒間プレイヤーに強い暗闇効果");
+
+        // 10秒後に闇叉の暗闇復活
+        new BukkitRunnable() {
+            @Override
+            public void run() {
+                if (plugin.isGameRunning() && teamManager.isPlayerInOniTeam(player)) {
+                    applyAnshaPermaDarkness(player);
+                }
+            }
+        }.runTaskLater(plugin, 20 * 10);
+    }
+
+    // 月牙のチェスト通知（GameManagerからの呼び出し用）
+    public void startGetsugaChestDetection() {
+        new BukkitRunnable() {
+            @Override
+            public void run() {
+                if (!plugin.isGameRunning()) {
+                    this.cancel();
+                    return;
+                }
+
+                for (Player p : Bukkit.getOnlinePlayers()) {
+                    if (teamManager.isPlayerInOniTeam(p) &&
+                            teamManager.getPlayerOniType(p) == OniType.GETSUGA) {
+                        // 全プレイヤーの最寄りのチェストを通知
+                        plugin.getGameManager().detectAllPlayersNearestChests(p);
+                        break; // 月牙は1人だけなので最初に見つかったらbreak
+                    }
+                }
+            }
+        }.runTaskTimer(plugin, 20 * 30, 20 * 30); // 30秒ごとに実行
+    }
+
+    // 月牙の殺月効果
+    public void startGetsugaKillMoonEffect(Player player) {
+        killMoonActive = true;
+
+        // 全プレイヤーに鈍足効果
+        for (Player p : Bukkit.getOnlinePlayers()) {
+            if (teamManager.isPlayerInPlayerTeam(p) && p.getGameMode() != GameMode.SPECTATOR) {
+                p.addPotionEffect(new PotionEffect(PotionEffectType.getByName("SLOW"), 20 * 30, 1, false, true));
+                p.sendMessage(ChatColor.DARK_RED + "月牙の殺月！30秒間鈍足になった");
+            }
+        }
+
+        player.sendMessage(ChatColor.DARK_RED + "殺月発動！30秒間プレイヤーを鈍足化（誰かを殴ると解除）");
+
+        // 30秒後に解除
+        BukkitTask task = new BukkitRunnable() {
+            @Override
+            public void run() {
+                stopGetsugaKillMoonEffect();
+            }
+        }.runTaskLater(plugin, 20 * 30);
+
+        UUID pid = player.getUniqueId();
+        getsugaKillMoonTasks.put(pid, task);
+    }
+
+    // 殺月効果解除
+    public void stopGetsugaKillMoonEffect() {
+        killMoonActive = false;
+
+        for (Player p : Bukkit.getOnlinePlayers()) {
+            if (teamManager.isPlayerInPlayerTeam(p)) {
+                p.removePotionEffect(PotionEffectType.getByName("SLOW"));
+            }
+        }
+
+        for (BukkitTask task : getsugaKillMoonTasks.values()) {
+            task.cancel();
+        }
+        getsugaKillMoonTasks.clear();
+    }
+
+    // 殺月効果中かどうか
+    public boolean isKillMoonActive() {
+        return killMoonActive;
     }
 
     public Map<UUID, Integer> getKakureDamaRemaining() {

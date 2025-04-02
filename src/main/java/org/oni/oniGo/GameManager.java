@@ -47,16 +47,9 @@ public class GameManager {
     // **追加**：プレイヤー残機
     private Map<UUID, Integer> playerLives = new HashMap<>();
 
-    // 現在の鬼タイプ
-    private OniType currentOniType = OniType.NORMAL;
-
-    // 鬼のタイプ
-    public enum OniType {
-        NORMAL,  // 通常
-        KISYA,   // 鬼叉
-        ANSYA,   // 暗叉
-        TUKI     // 月牙
-    }
+    // 月牙用追加フィールド
+    private long gameStartTime = 0;
+    private Map<UUID, Boolean> nextAttackMoonSlash = new HashMap<>();
 
     public GameManager(OniGo plugin, ConfigManager configManager, EffectManager effectManager,
                        ItemManager itemManager, TeamManager teamManager) {
@@ -140,7 +133,8 @@ public class GameManager {
         exitDoorOpened = false;
         remainingTime = 500;
         exitDoorOpeners.clear();
-        currentOniType = OniType.NORMAL;
+        nextAttackMoonSlash.clear();
+        gameStartTime = 0;
 
         if (gameTimerTask != null) {
             gameTimerTask.cancel();
@@ -175,7 +169,6 @@ public class GameManager {
 
         exitDoorOpened = false;
         resetExitDoor();
-
     }
 
     private void resetExitDoor() {
@@ -245,61 +238,12 @@ public class GameManager {
         // スコアボード更新
         updateScoreboard();
 
-        // 鬼タイプに応じた効果とサウンド
-        startOniTypeEffects();
+        // ゲーム開始時間を記録
+        gameStartTime = System.currentTimeMillis() / 1000;
+        // 月牙のチェスト定期通知を開始
+        effectManager.startGetsugaChestDetection();
 
         Bukkit.broadcastMessage(ChatColor.GREEN + "ゲームスタート！残り時間：" + remainingTime + "秒");
-    }
-
-    /**
-     * 鬼タイプに応じた初期効果
-     */
-    private void startOniTypeEffects() {
-        // 鬼見つける
-        Player oniPlayer = null;
-        for (Player p : Bukkit.getOnlinePlayers()) {
-            if (teamManager.isPlayerInOniTeam(p)) {
-                oniPlayer = p;
-                break;
-            }
-        }
-
-        if (oniPlayer == null) return;
-
-        // 自動的に夜叉効果を起動
-        effectManager.startYashaEffect(oniPlayer);
-
-        // 鬼のタイプ別効果
-        switch (currentOniType) {
-            case KISYA:
-                // 鬼叉の効果
-                for (Player p : Bukkit.getOnlinePlayers()) {
-                    p.playSound(p.getLocation(), EffectManager.KISYA_SOUND, 1.0f, 1.0f);
-                }
-                oniPlayer.sendTitle(ChatColor.RED + "鬼叉モード発動！", "", 10, 40, 10);
-                break;
-
-            case ANSYA:
-                // 暗叉の効果
-                for (Player p : Bukkit.getOnlinePlayers()) {
-                    p.playSound(p.getLocation(), EffectManager.ANSYA_SOUND, 1.0f, 1.0f);
-                }
-                oniPlayer.sendTitle(ChatColor.DARK_PURPLE + "暗叉モード発動！", "", 10, 40, 10);
-                break;
-
-            case TUKI:
-                // 月牙の効果
-                for (Player p : Bukkit.getOnlinePlayers()) {
-                    p.playSound(p.getLocation(), EffectManager.TUKI_SOUND, 1.0f, 1.0f);
-                }
-                oniPlayer.sendTitle(ChatColor.BLUE + "月牙モード発動！", "", 10, 40, 10);
-                break;
-
-            default:
-                // 通常の鬼
-                oniPlayer.sendTitle(ChatColor.RED + "鬼モード発動！", "", 10, 40, 10);
-                break;
-        }
     }
 
     /**
@@ -311,14 +255,6 @@ public class GameManager {
         }
         teamManager.setupOniStart(oniPlayer);
         startGame(oniPlayer);
-    }
-
-    /**
-     * 特定の鬼タイプでスタート
-     */
-    public void oniTypeStartGame(Player oniPlayer, OniType type) {
-        this.currentOniType = type;
-        oniStartGame(oniPlayer);
     }
 
     /**
@@ -349,14 +285,12 @@ public class GameManager {
                 p.sendTitle(ChatColor.GOLD + "プレイヤー勝利！", ChatColor.AQUA + "過半数が脱出！",
                         10, 70, 20);
             }
-            effectManager.playPlayerVictorySound();
         } else {
             // 鬼勝利
             for (Player p : Bukkit.getOnlinePlayers()) {
                 p.sendTitle(ChatColor.RED + "鬼勝利！", ChatColor.AQUA + "",
                         10, 70, 20);
             }
-            effectManager.playOniVictorySound();
         }
 
         Bukkit.broadcastMessage(ChatColor.GOLD + "========== ゲーム終了 ==========");
@@ -391,10 +325,6 @@ public class GameManager {
         for (Player player : Bukkit.getOnlinePlayers()) {
             player.teleport(spawnLocation);
         }
-
-        // 鬼勝利のサウンド再生
-        effectManager.playOniVictorySound();
-
         resetGame();
     }
 
@@ -413,10 +343,6 @@ public class GameManager {
         for (Player p : Bukkit.getOnlinePlayers()) {
             p.teleport(spawnLocation);
         }
-
-        // 鬼勝利のサウンド再生
-        effectManager.playOniVictorySound();
-
         resetGame();
     }
 
@@ -436,10 +362,6 @@ public class GameManager {
         for (Player player : Bukkit.getOnlinePlayers()) {
             player.teleport(spawnLocation);
         }
-
-        // プレイヤー勝利のサウンド再生
-        effectManager.playPlayerVictorySound();
-
         resetGame();
     }
 
@@ -459,10 +381,6 @@ public class GameManager {
         for (Player p : Bukkit.getOnlinePlayers()) {
             p.teleport(spawnLocation);
         }
-
-        // プレイヤー勝利のサウンド再生
-        effectManager.playPlayerVictorySound();
-
         resetGame();
     }
 
@@ -913,66 +831,6 @@ public class GameManager {
     }
 
     /**
-     * 鬼叉の突進スキル使用
-     */
-    public void useKisyaTossinSkill(Player player) {
-        if (!gameRunning) return;
-        if (!teamManager.isPlayerInOniTeam(player)) return;
-
-        effectManager.useOniTossinSkill(player);
-    }
-
-    /**
-     * 鬼叉の停止スキル使用
-     */
-    public void useKisyaTeisiSkill(Player player) {
-        if (!gameRunning) return;
-        if (!teamManager.isPlayerInOniTeam(player)) return;
-
-        effectManager.useOniTeisiSkill(player);
-    }
-
-    /**
-     * 鬼叉の金棒スキル使用
-     */
-    public void useKisyaKanaboSkill(Player player) {
-        if (!gameRunning) return;
-        if (!teamManager.isPlayerInOniTeam(player)) return;
-
-        effectManager.useOniKanaboSkill(player);
-    }
-
-    /**
-     * 暗叉の暗転スキル使用
-     */
-    public void useAnsyaAntenSkill(Player player) {
-        if (!gameRunning) return;
-        if (!teamManager.isPlayerInOniTeam(player)) return;
-
-        effectManager.useAntenSkill(player);
-    }
-
-    /**
-     * 月牙の三日月スキル使用
-     */
-    public void useTukiMikadukiSkill(Player player) {
-        if (!gameRunning) return;
-        if (!teamManager.isPlayerInOniTeam(player)) return;
-
-        effectManager.useMikadukiSkill(player);
-    }
-
-    /**
-     * 月牙の殺月スキル使用
-     */
-    public void useTukiSatsukiSkill(Player player) {
-        if (!gameRunning) return;
-        if (!teamManager.isPlayerInOniTeam(player)) return;
-
-        effectManager.useSatsukiSkill(player);
-    }
-
-    /**
      * メインドア開ける
      */
     public void openDoor() {
@@ -1114,6 +972,124 @@ public class GameManager {
         sendConfigMessage(null, ChatColor.GREEN + "ゲーム時間を" + seconds + "秒に設定したよ");
     }
 
+    // 全プレイヤー最寄りチェスト検知（月牙用）
+    public void detectAllPlayersNearestChests(Player oniPlayer) {
+        if (!gameRunning) return;
+        if (!teamManager.isPlayerInOniTeam(oniPlayer)) return;
+        if (teamManager.getPlayerOniType(oniPlayer) != OniType.GETSUGA) return;
+
+        StringBuilder message = new StringBuilder(ChatColor.BLUE + "チェスト周辺プレイヤー情報:\n");
+        boolean playerFound = false;
+
+        for (Player p : Bukkit.getOnlinePlayers()) {
+            if (teamManager.isPlayerInPlayerTeam(p) && p.getGameMode() != GameMode.SPECTATOR) {
+                playerFound = true;
+                // 最寄りチェスト探索
+                String nearestChestName = null;
+                double nearestChestDist = Double.MAX_VALUE;
+                Location pLoc = p.getLocation();
+
+                // 通常チェスト
+                for (Map.Entry<String, Location> e : configManager.getChestLocations().entrySet()) {
+                    double d = pLoc.distance(e.getValue());
+                    if (d < nearestChestDist) {
+                        nearestChestDist = d;
+                        nearestChestName = "通常チェスト「" + e.getKey() + "」";
+                    }
+                }
+                // カウントチェスト
+                for (Map.Entry<String, Location> e : configManager.getCountChestLocations().entrySet()) {
+                    double d = pLoc.distance(e.getValue());
+                    if (d < nearestChestDist) {
+                        nearestChestDist = d;
+                        nearestChestName = "カウントチェスト「" + e.getKey() + "」";
+                    }
+                }
+
+                message.append(ChatColor.AQUA).append(p.getName()).append(": ");
+                if (nearestChestName != null) {
+                    message.append(nearestChestName).append(" (約").append(Math.round(nearestChestDist)).append("ブロック)\n");
+                } else {
+                    message.append("チェスト周辺にいない\n");
+                }
+            }
+        }
+
+        if (!playerFound) {
+            oniPlayer.sendMessage(ChatColor.RED + "プレイヤーが見つかりません");
+        } else {
+            oniPlayer.sendMessage(message.toString());
+        }
+    }
+
+    // 全プレイヤーをランダムなチェストにテレポート（月牙の三日月用）
+    public void teleportAllPlayersToRandomChests() {
+        if (!gameRunning) return;
+
+        List<Location> chestLocations = new ArrayList<>();
+        chestLocations.addAll(configManager.getCountChestLocations().values());
+        chestLocations.addAll(configManager.getChestLocations().values());
+
+        if (chestLocations.isEmpty()) {
+            Bukkit.broadcastMessage(ChatColor.RED + "テレポート先のチェストがありません");
+            return;
+        }
+
+        Random random = new Random();
+        for (Player p : Bukkit.getOnlinePlayers()) {
+            if (teamManager.isPlayerInPlayerTeam(p) && p.getGameMode() != GameMode.SPECTATOR) {
+                // ランダムなチェスト選択
+                Location chestLoc = chestLocations.get(random.nextInt(chestLocations.size()));
+                // 安全な位置に調整
+                Location teleportLoc = chestLoc.clone().add(0, 1, 0);
+
+                p.teleport(teleportLoc);
+                p.playSound(p.getLocation(), Sound.ENTITY_ENDERMAN_TELEPORT, 1f, 1f);
+                p.sendMessage(ChatColor.AQUA + "月牙の能力で転送された！");
+            }
+        }
+
+        Bukkit.broadcastMessage(ChatColor.LIGHT_PURPLE + "月牙の三日月により全プレイヤーが転送された！");
+    }
+
+    // 次の攻撃で月切り発動フラグ
+    public void setNextAttackMoonSlash(Player player) {
+        nextAttackMoonSlash.put(player.getUniqueId(), true);
+    }
+
+    // 月切り待機中かどうか
+    public boolean isNextAttackMoonSlash(Player player) {
+        return nextAttackMoonSlash.getOrDefault(player.getUniqueId(), false);
+    }
+
+    // 月切り発動（カウントチェスト減少）
+    public void executeGetsugaMoonSlash(Player player, Player target) {
+        if (!isNextAttackMoonSlash(player)) return;
+
+        // 月切りフラグ解除
+        nextAttackMoonSlash.put(player.getUniqueId(), false);
+
+        // ターゲットのカウントチェスト数を減らす
+        UUID targetId = target.getUniqueId();
+        int opened = playerOpenedCountChests.getOrDefault(targetId, 0);
+
+        if (opened > 0) {
+            // 既に開けたチェストをカウントダウン
+            playerOpenedCountChests.put(targetId, opened - 1);
+            target.sendMessage(ChatColor.RED + "月牙の月切りによりカウントチェスト進行度が1つ減った！");
+            player.sendMessage(ChatColor.BLUE + target.getName() + "のカウントチェスト進行度を1つ減らした！");
+
+            // 使用回数カウント
+            itemManager.incrementGetsugaMoonSlashCount(player.getUniqueId());
+            int used = itemManager.getGetsugaMoonSlashCount(player.getUniqueId());
+            player.sendMessage(ChatColor.GRAY + "月切り: " + used + "/3回使用");
+
+            updateScoreboard();
+        } else {
+            player.sendMessage(ChatColor.RED + target.getName() + "はまだカウントチェストを開けていません");
+        }
+    }
+
     public boolean isGameRunning() {
         return gameRunning;
     }
@@ -1146,11 +1122,7 @@ public class GameManager {
         return remainingChests;
     }
 
-    public void setOniType(OniType type) {
-        this.currentOniType = type;
-    }
-
-    public OniType getCurrentOniType() {
-        return currentOniType;
+    public long getGameStartTime() {
+        return gameStartTime;
     }
 }

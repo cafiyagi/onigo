@@ -24,7 +24,9 @@ import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.plugin.java.JavaPlugin;
+import org.bukkit.potion.PotionEffect;
 import org.bukkit.potion.PotionEffectType;
+import org.bukkit.util.Vector;
 
 import java.util.*;
 
@@ -127,16 +129,6 @@ public final class OniGo extends JavaPlugin implements CommandExecutor, Listener
         if (getCommand("rtp") != null) {
             getCommand("rtp").setExecutor(this);
         }
-        // 追加: 鬼タイプ別のスタートコマンド
-        if (getCommand("kisyastart") != null) {
-            getCommand("kisyastart").setExecutor(this);
-        }
-        if (getCommand("ansyastart") != null) {
-            getCommand("ansyastart").setExecutor(this);
-        }
-        if (getCommand("tukistart") != null) {
-            getCommand("tukistart").setExecutor(this);
-        }
     }
 
     @Override
@@ -198,24 +190,6 @@ public final class OniGo extends JavaPlugin implements CommandExecutor, Listener
                 break;
             case "onistart":
                 if (player != null) {
-                    gameManager.oniStartGame(player);
-                }
-                break;
-            case "kisyastart":
-                if (player != null) {
-                    gameManager.setOniType(GameManager.OniType.KISYA);
-                    gameManager.oniStartGame(player);
-                }
-                break;
-            case "ansyastart":
-                if (player != null) {
-                    gameManager.setOniType(GameManager.OniType.ANSYA);
-                    gameManager.oniStartGame(player);
-                }
-                break;
-            case "tukistart":
-                if (player != null) {
-                    gameManager.setOniType(GameManager.OniType.TUKI);
                     gameManager.oniStartGame(player);
                 }
                 break;
@@ -437,8 +411,9 @@ public final class OniGo extends JavaPlugin implements CommandExecutor, Listener
         if (!(event.getPlayer() instanceof Player)) return;
         Player player = (Player) event.getPlayer();
 
-        // 鬼はチェストを開けられない
-        if (teamManager.isPlayerInOniTeam(player)) {
+        // 鬼はチェストを開けられない（月牙を除く）
+        if (teamManager.isPlayerInOniTeam(player) &&
+                teamManager.getPlayerOniType(player) != OniType.GETSUGA) {
             if (event.getInventory().getLocation() != null &&
                     event.getInventory().getLocation().getBlock().getState() instanceof org.bukkit.block.Chest) {
                 event.setCancelled(true);
@@ -469,42 +444,7 @@ public final class OniGo extends JavaPlugin implements CommandExecutor, Listener
         if (item == null) return;
         Player player = event.getPlayer();
 
-        // 鬼タイプに応じたスキル使用
-        if (gameManager.isGameRunning() && teamManager.isPlayerInOniTeam(player)) {
-            // 鬼叉のスキル
-            if (gameManager.getCurrentOniType() == GameManager.OniType.KISYA) {
-                // キーバインド割り当て（例：特定のアイテム使用やスニーク+右クリックなど）
-                if (player.isSneaking() && event.getAction() == Action.RIGHT_CLICK_AIR) {
-                    gameManager.useKisyaTossinSkill(player);
-                    return;
-                } else if (player.isSneaking() && event.getAction() == Action.RIGHT_CLICK_BLOCK) {
-                    gameManager.useKisyaTeisiSkill(player);
-                    return;
-                } else if (event.getAction() == Action.RIGHT_CLICK_AIR && player.getInventory().getItemInMainHand().getType() == Material.STONE_AXE) {
-                    gameManager.useKisyaKanaboSkill(player);
-                    return;
-                }
-            }
-            // 暗叉のスキル
-            else if (gameManager.getCurrentOniType() == GameManager.OniType.ANSYA) {
-                if (player.isSneaking() && event.getAction() == Action.RIGHT_CLICK_AIR) {
-                    gameManager.useAnsyaAntenSkill(player);
-                    return;
-                }
-            }
-            // 月牙のスキル
-            else if (gameManager.getCurrentOniType() == GameManager.OniType.TUKI) {
-                if (player.isSneaking() && event.getAction() == Action.RIGHT_CLICK_AIR) {
-                    gameManager.useTukiMikadukiSkill(player);
-                    return;
-                } else if (player.isSneaking() && event.getAction() == Action.RIGHT_CLICK_BLOCK) {
-                    gameManager.useTukiSatsukiSkill(player);
-                    return;
-                }
-            }
-        }
-
-        // 夜叉アイテム (使用しないがアイテムが残っていた場合の対応)
+        // 夜叉アイテム
         if (itemManager.isYashaItem(item)) {
             event.setCancelled(true);
             if (!effectManager.isYashaActive()) {
@@ -559,19 +499,6 @@ public final class OniGo extends JavaPlugin implements CommandExecutor, Listener
                 return;
             }
             gameManager.teleportToNearbyChest(player);
-        }
-        // 転生アイテム
-        else if (itemManager.isTennseiItem(item)) {
-            event.setCancelled(true);
-            if (!gameManager.isGameRunning()) {
-                player.sendMessage(ChatColor.RED + "ゲームが開始されていないよ！");
-                return;
-            }
-            if (!teamManager.isPlayerInOniTeam(player)) {
-                player.sendMessage(ChatColor.RED + "鬼陣営のみ使用可能だよ！");
-                return;
-            }
-            itemManager.handleTennseiItem(player);
         }
         // プレイヤー用「緊急脱出アイテム」
         else if (itemManager.isPlayerEscapeItem(item)) {
@@ -665,6 +592,276 @@ public final class OniGo extends JavaPlugin implements CommandExecutor, Listener
             event.setCancelled(true);
             openGameTimeGUI(player);
         }
+        // 鬼叉「突進」
+        else if (itemManager.isKishaDashItem(item)) {
+            event.setCancelled(true);
+            if (!gameManager.isGameRunning()) {
+                player.sendMessage(ChatColor.RED + "ゲームが開始されていないよ！");
+                return;
+            }
+            if (!teamManager.isPlayerInOniTeam(player) ||
+                    teamManager.getPlayerOniType(player) != OniType.KISHA) {
+                player.sendMessage(ChatColor.RED + "鬼叉のみ使用可能だよ！");
+                return;
+            }
+
+            UUID pid = player.getUniqueId();
+            if (itemManager.isKishaDashOnCooldown(pid)) {
+                int remain = itemManager.getKishaDashRemainingCooldown(pid);
+                player.sendMessage(ChatColor.RED + "クールダウン中: 残り" + remain + "秒");
+                return;
+            }
+
+            effectManager.startKishaDashEffect(player);
+            itemManager.setKishaDashCooldown(pid);
+        }
+        // 鬼叉「停止」
+        else if (itemManager.isKishaFreezeItem(item)) {
+            event.setCancelled(true);
+            if (!gameManager.isGameRunning()) {
+                player.sendMessage(ChatColor.RED + "ゲームが開始されていないよ！");
+                return;
+            }
+            if (!teamManager.isPlayerInOniTeam(player) ||
+                    teamManager.getPlayerOniType(player) != OniType.KISHA) {
+                player.sendMessage(ChatColor.RED + "鬼叉のみ使用可能だよ！");
+                return;
+            }
+
+            UUID pid = player.getUniqueId();
+            if (itemManager.isKishaFreezeOnCooldown(pid)) {
+                int remain = itemManager.getKishaFreezeRemainingCooldown(pid);
+                player.sendMessage(ChatColor.RED + "クールダウン中: 残り" + remain + "秒");
+                return;
+            }
+
+            effectManager.startKishaFreezeEffect(player);
+            itemManager.setKishaFreezeCooldown(pid);
+        }
+        // 鬼叉「金棒」
+        else if (itemManager.isKishaGoldClubItem(item)) {
+            event.setCancelled(true);
+            if (!gameManager.isGameRunning()) {
+                player.sendMessage(ChatColor.RED + "ゲームが開始されていないよ！");
+                return;
+            }
+            if (!teamManager.isPlayerInOniTeam(player) ||
+                    teamManager.getPlayerOniType(player) != OniType.KISHA) {
+                player.sendMessage(ChatColor.RED + "鬼叉のみ使用可能だよ！");
+                return;
+            }
+
+            UUID pid = player.getUniqueId();
+            if (itemManager.isKishaGoldClubOnCooldown(pid)) {
+                int remain = itemManager.getKishaGoldClubRemainingCooldown(pid);
+                player.sendMessage(ChatColor.RED + "クールダウン中: 残り" + remain + "秒");
+                return;
+            }
+
+            effectManager.startKishaGoldClubEffect(player);
+            itemManager.setKishaGoldClubCooldown(pid);
+        }
+        // 闇叉「暗転」
+        else if (itemManager.isAnshaDarknessItem(item)) {
+            event.setCancelled(true);
+            if (!gameManager.isGameRunning()) {
+                player.sendMessage(ChatColor.RED + "ゲームが開始されていないよ！");
+                return;
+            }
+            if (!teamManager.isPlayerInOniTeam(player) ||
+                    teamManager.getPlayerOniType(player) != OniType.ANSHA) {
+                player.sendMessage(ChatColor.RED + "闇叉のみ使用可能だよ！");
+                return;
+            }
+
+            UUID pid = player.getUniqueId();
+            if (itemManager.isAnshaDarknessOnCooldown(pid)) {
+                int remain = itemManager.getAnshaDarknessRemainingCooldown(pid);
+                player.sendMessage(ChatColor.RED + "クールダウン中: 残り" + remain + "秒");
+                return;
+            }
+
+            effectManager.startAnshaDarknessEffect(player);
+            itemManager.setAnshaDarknessCooldown(pid);
+        }
+        // 闇叉「転生」
+        else if (itemManager.isAnshaTeleportItem(item)) {
+            event.setCancelled(true);
+            if (!gameManager.isGameRunning()) {
+                player.sendMessage(ChatColor.RED + "ゲームが開始されていないよ！");
+                return;
+            }
+            if (!teamManager.isPlayerInOniTeam(player) ||
+                    teamManager.getPlayerOniType(player) != OniType.ANSHA) {
+                player.sendMessage(ChatColor.RED + "闇叉のみ使用可能だよ！");
+                return;
+            }
+
+            UUID pid = player.getUniqueId();
+            if (itemManager.isAnshaTeleportOnCooldown(pid)) {
+                int remain = itemManager.getAnshaTeleportRemainingCooldown(pid);
+                player.sendMessage(ChatColor.RED + "クールダウン中: 残り" + remain + "秒");
+                return;
+            }
+
+            if (itemManager.hasTeleportMarker(pid)) {
+                // マーカーに転送
+                Location marker = itemManager.getTeleportMarker(pid);
+                player.teleport(marker);
+                itemManager.clearTeleportMarker(pid);
+                player.playSound(player.getLocation(), Sound.ENTITY_ENDERMAN_TELEPORT, 1f, 1f);
+                player.sendMessage(ChatColor.LIGHT_PURPLE + "マーカーにテレポート！");
+            } else {
+                // マーカーセット
+                itemManager.setTeleportMarker(pid, player.getLocation());
+                player.playSound(player.getLocation(), Sound.ENTITY_EXPERIENCE_ORB_PICKUP, 1f, 1f);
+                player.sendMessage(ChatColor.LIGHT_PURPLE + "テレポートマーカーを設置した！");
+            }
+
+            itemManager.setAnshaTeleportCooldown(pid);
+        }
+        // 闇叉「逃亡不可」
+        else if (itemManager.isAnshaEscapeDisableItem(item)) {
+            event.setCancelled(true);
+            if (!gameManager.isGameRunning()) {
+                player.sendMessage(ChatColor.RED + "ゲームが開始されていないよ！");
+                return;
+            }
+            if (!teamManager.isPlayerInOniTeam(player) ||
+                    teamManager.getPlayerOniType(player) != OniType.ANSHA) {
+                player.sendMessage(ChatColor.RED + "闇叉のみ使用可能だよ！");
+                return;
+            }
+
+            UUID pid = player.getUniqueId();
+            if (itemManager.isAnshaEscapeDisableUsed(pid)) {
+                player.sendMessage(ChatColor.RED + "このアイテムは既に使用済みです");
+                return;
+            }
+
+            // 120秒経過しているか確認
+            if (gameManager.getGameStartTime() + 120 > (System.currentTimeMillis() / 1000)) {
+                int remaining = (int)(gameManager.getGameStartTime() + 120 - (System.currentTimeMillis() / 1000));
+                player.sendMessage(ChatColor.RED + "ゲーム開始から120秒後に使用可能です。残り" + remaining + "秒");
+                return;
+            }
+
+            // 最も近いプレイヤーを探す
+            Player nearestPlayer = null;
+            double minDist = Double.MAX_VALUE;
+
+            for (Player p : Bukkit.getOnlinePlayers()) {
+                if (teamManager.isPlayerInPlayerTeam(p) && p.getGameMode() != GameMode.SPECTATOR) {
+                    double dist = p.getLocation().distance(player.getLocation());
+                    if (dist < minDist) {
+                        minDist = dist;
+                        nearestPlayer = p;
+                    }
+                }
+            }
+
+            if (nearestPlayer == null) {
+                player.sendMessage(ChatColor.RED + "近くにプレイヤーがいません");
+                return;
+            }
+
+            // プレイヤーの後ろにワープ
+            Location playerLoc = nearestPlayer.getLocation();
+            Vector direction = playerLoc.getDirection().multiply(-1).normalize();
+            Location teleportLoc = playerLoc.clone().add(direction.multiply(1.5));
+
+            player.teleport(teleportLoc);
+            player.playSound(player.getLocation(), Sound.ENTITY_ENDERMAN_TELEPORT, 1f, 0.5f);
+            player.sendMessage(ChatColor.RED + nearestPlayer.getName() + "の背後に現れた！");
+            nearestPlayer.sendMessage(ChatColor.RED + "背後に闇叉が現れた！");
+
+            // 2秒間の行動不能
+            player.addPotionEffect(new PotionEffect(PotionEffectType.getByName("SLOW"), 40, 255, false, false));
+
+            // 使用済みフラグを立てる
+            itemManager.setAnshaEscapeDisableUsed(pid);
+        }
+        // 月牙「月切り」
+        else if (itemManager.isGetsugaMoonSlashItem(item)) {
+            event.setCancelled(true);
+            if (!gameManager.isGameRunning()) {
+                player.sendMessage(ChatColor.RED + "ゲームが開始されていないよ！");
+                return;
+            }
+            if (!teamManager.isPlayerInOniTeam(player) ||
+                    teamManager.getPlayerOniType(player) != OniType.GETSUGA) {
+                player.sendMessage(ChatColor.RED + "月牙のみ使用可能だよ！");
+                return;
+            }
+
+            UUID pid = player.getUniqueId();
+            // 使用回数チェック
+            int usedCount = itemManager.getGetsugaMoonSlashCount(pid);
+            if (usedCount >= 3) {
+                player.sendMessage(ChatColor.RED + "月切りは既に3回使用済みです");
+                return;
+            }
+
+            // 30秒経過しているか確認
+            if (gameManager.getGameStartTime() + 30 > (System.currentTimeMillis() / 1000)) {
+                int remaining = (int)(gameManager.getGameStartTime() + 30 - (System.currentTimeMillis() / 1000));
+                player.sendMessage(ChatColor.RED + "ゲーム開始から30秒後に使用可能です。残り" + remaining + "秒");
+                return;
+            }
+
+            // 次に殴った時に発動する効果を設定
+            player.sendMessage(ChatColor.BLUE + "月切りが準備完了！次にプレイヤーを殴るとカウントチェストを1つ減らします");
+            gameManager.setNextAttackMoonSlash(player);
+        }
+        // 月牙「三日月」
+        else if (itemManager.isGetsugaCrescentItem(item)) {
+            event.setCancelled(true);
+            if (!gameManager.isGameRunning()) {
+                player.sendMessage(ChatColor.RED + "ゲームが開始されていないよ！");
+                return;
+            }
+            if (!teamManager.isPlayerInOniTeam(player) ||
+                    teamManager.getPlayerOniType(player) != OniType.GETSUGA) {
+                player.sendMessage(ChatColor.RED + "月牙のみ使用可能だよ！");
+                return;
+            }
+
+            UUID pid = player.getUniqueId();
+            if (itemManager.isGetsugaCrescentOnCooldown(pid)) {
+                int remain = itemManager.getGetsugaCrescentRemainingCooldown(pid);
+                player.sendMessage(ChatColor.RED + "クールダウン中: 残り" + remain + "秒");
+                return;
+            }
+
+            // 全プレイヤーをランダムなチェスト付近にワープ
+            gameManager.teleportAllPlayersToRandomChests();
+            player.sendMessage(ChatColor.AQUA + "三日月発動！全プレイヤーをランダムなチェスト付近にテレポートさせた");
+
+            itemManager.setGetsugaCrescentCooldown(pid);
+        }
+        // 月牙「殺月」
+        else if (itemManager.isGetsugaKillMoonItem(item)) {
+            event.setCancelled(true);
+            if (!gameManager.isGameRunning()) {
+                player.sendMessage(ChatColor.RED + "ゲームが開始されていないよ！");
+                return;
+            }
+            if (!teamManager.isPlayerInOniTeam(player) ||
+                    teamManager.getPlayerOniType(player) != OniType.GETSUGA) {
+                player.sendMessage(ChatColor.RED + "月牙のみ使用可能だよ！");
+                return;
+            }
+
+            UUID pid = player.getUniqueId();
+            if (itemManager.isGetsugaKillMoonOnCooldown(pid)) {
+                int remain = itemManager.getGetsugaKillMoonRemainingCooldown(pid);
+                player.sendMessage(ChatColor.RED + "クールダウン中: 残り" + remain + "秒");
+                return;
+            }
+
+            effectManager.startGetsugaKillMoonEffect(player);
+            itemManager.setGetsugaKillMoonCooldown(pid);
+        }
     }
 
     @EventHandler
@@ -709,19 +906,7 @@ public final class OniGo extends JavaPlugin implements CommandExecutor, Listener
             } else if ("§c鬼スタート".equals(dispName)) {
                 player.closeInventory();
                 gameManager.oniStartGame(player);
-            } else if ("§d鬼叉スタート".equals(dispName)) {
-                player.closeInventory();
-                gameManager.setOniType(GameManager.OniType.KISYA);
-                gameManager.oniStartGame(player);
-            } else if ("§5暗叉スタート".equals(dispName)) {
-                player.closeInventory();
-                gameManager.setOniType(GameManager.OniType.ANSYA);
-                gameManager.oniStartGame(player);
-            } else if ("§9月牙スタート".equals(dispName)) {
-                player.closeInventory();
-                gameManager.setOniType(GameManager.OniType.TUKI);
-                gameManager.oniStartGame(player);
-            } else if ("§eランダム鬼スタート".equals(dispName)) {
+            } else if ("§dランダム鬼スタート".equals(dispName)) {
                 player.closeInventory();
                 randomOniStart(player);
             }
@@ -775,6 +960,47 @@ public final class OniGo extends JavaPlugin implements CommandExecutor, Listener
                 playerInputModes.put(player.getUniqueId(), InputMode.GAME_TIME);
             }
         }
+        // 鬼タイプ選択GUI
+        else if (event.getView().getTitle().equals("鬼タイプ選択")) {
+            event.setCancelled(true);
+            if (event.getCurrentItem() == null) return;
+            Player player = (Player) event.getWhoClicked();
+            if (!teamManager.isPlayerInOniTeam(player)) {
+                player.sendMessage(ChatColor.RED + "鬼チームのみ選択できます");
+                player.closeInventory();
+                return;
+            }
+
+            OniType selectedType = null;
+            String typeName = ChatColor.stripColor(event.getCurrentItem().getItemMeta().getDisplayName());
+
+            try {
+                selectedType = OniType.valueOf(typeName.toUpperCase()); // 日本語名を英語名に変換
+            } catch (Exception e) {
+                // 名前変換のフォールバック
+                if (typeName.equals("夜叉")) selectedType = OniType.YASHA;
+                else if (typeName.equals("鬼叉")) selectedType = OniType.KISHA;
+                else if (typeName.equals("闇叉")) selectedType = OniType.ANSHA;
+                else if (typeName.equals("月牙")) selectedType = OniType.GETSUGA;
+            }
+
+            if (selectedType != null) {
+                teamManager.setPlayerOniType(player, selectedType);
+                player.sendMessage(ChatColor.GREEN + selectedType.getDisplayName() + "を選択しました！");
+                // 鬼タイプごとのアイテム配布
+                itemManager.distributeOniItems(player, selectedType);
+
+                // 鬼タイプに応じた速度適用
+                applyOniTypeSpeed(player, selectedType);
+
+                // 闇叉なら暗闇効果適用
+                if (selectedType == OniType.ANSHA) {
+                    effectManager.applyAnshaPermaDarkness(player);
+                }
+
+                player.closeInventory();
+            }
+        }
     }
 
     @EventHandler
@@ -788,14 +1014,91 @@ public final class OniGo extends JavaPlugin implements CommandExecutor, Listener
             event.setCancelled(true);
             return;
         }
-        // Oni -> Player のワンパン
+
+        // 鬼 -> プレイヤーの攻撃処理
         if (gameManager.isGameRunning() &&
                 teamManager.isPlayerInOniTeam(damager) &&
                 teamManager.isPlayerInPlayerTeam(target)) {
+
+            OniType oniType = teamManager.getPlayerOniType(damager);
+
             event.setCancelled(true);
-            damager.sendMessage(ChatColor.RED + target.getName() + "を一撃で倒した！");
-            target.sendMessage(ChatColor.RED + "鬼にやられた…");
-            target.damage(1000); // 強制的に致命ダメージ
+
+            // 月牙の月切り発動チェック
+            if (oniType == OniType.GETSUGA && gameManager.isNextAttackMoonSlash(damager)) {
+                gameManager.executeGetsugaMoonSlash(damager, target);
+                return;
+            }
+
+            // 金棒効果中なら一撃必殺
+            if (effectManager.isKishaGoldClubActive(damager)) {
+                damager.sendMessage(ChatColor.YELLOW + "金棒の力で" + target.getName() + "を一撃で倒した！");
+                target.sendMessage(ChatColor.RED + "鬼叉の金棒にやられた…");
+                target.damage(1000);
+                return;
+            }
+
+            // 月牙の殺月効果中で誰かを殴ったら効果解除
+            if (effectManager.isKillMoonActive() && oniType == OniType.GETSUGA) {
+                effectManager.stopGetsugaKillMoonEffect();
+                damager.sendMessage(ChatColor.RED + "殺月の効果が解除された！");
+            }
+
+            switch (oniType) {
+                case YASHA:
+                    // 夜叉は一撃で倒せる
+                    damager.sendMessage(ChatColor.RED + target.getName() + "を一撃で倒した！");
+                    target.sendMessage(ChatColor.RED + "夜叉にやられた…");
+                    target.damage(1000);
+                    break;
+
+                case KISHA:
+                    // 鬼叉は2回攻撃で倒せる
+                    int hits = teamManager.getPlayerHitCount(target);
+                    hits++;
+                    teamManager.incrementPlayerHitCount(target);
+
+                    if (hits >= 2) {
+                        damager.sendMessage(ChatColor.GOLD + target.getName() + "を倒した！(" + hits + "ヒット)");
+                        target.sendMessage(ChatColor.RED + "鬼叉にやられた…");
+                        target.damage(1000);
+                        teamManager.resetPlayerHitCount(target);
+                    } else {
+                        damager.sendMessage(ChatColor.GOLD + target.getName() + "に攻撃！(" + hits + "ヒット)");
+                        target.sendMessage(ChatColor.RED + "鬼叉に攻撃された！残りHP:" + (2-hits));
+                        // ノックバック効果
+                        org.bukkit.util.Vector knockback = damager.getLocation().getDirection().multiply(1.5);
+                        target.setVelocity(knockback);
+                    }
+                    break;
+
+                case ANSHA:
+                    // 闇叉は一撃で倒せる
+                    damager.sendMessage(ChatColor.DARK_PURPLE + target.getName() + "を一撃で倒した！");
+                    target.sendMessage(ChatColor.RED + "闇叉にやられた…");
+                    target.damage(1000);
+                    break;
+
+                case GETSUGA:
+                    // 月牙は5回攻撃で倒せる
+                    int gHits = teamManager.getPlayerHitCount(target);
+                    gHits++;
+                    teamManager.incrementPlayerHitCount(target);
+
+                    if (gHits >= 5) {
+                        damager.sendMessage(ChatColor.BLUE + target.getName() + "を倒した！(" + gHits + "ヒット)");
+                        target.sendMessage(ChatColor.RED + "月牙にやられた…");
+                        target.damage(1000);
+                        teamManager.resetPlayerHitCount(target);
+                    } else {
+                        damager.sendMessage(ChatColor.BLUE + target.getName() + "に攻撃！(" + gHits + "ヒット)");
+                        target.sendMessage(ChatColor.RED + "月牙に攻撃された！残りHP:" + (5-gHits));
+                        // ノックバック効果
+                        org.bukkit.util.Vector kb = damager.getLocation().getDirection().multiply(0.8);
+                        target.setVelocity(kb);
+                    }
+                    break;
+            }
         }
     }
 
@@ -886,7 +1189,7 @@ public final class OniGo extends JavaPlugin implements CommandExecutor, Listener
         normalMeta.setDisplayName("§2通常スタート");
         normalMeta.setLore(Collections.singletonList("全員が陣営選択した状態で開始"));
         normalStart.setItemMeta(normalMeta);
-        inv.setItem(0, normalStart);
+        inv.setItem(2, normalStart);
 
         // 鬼スタート
         ItemStack oniStart = new ItemStack(Material.RED_WOOL);
@@ -894,39 +1197,15 @@ public final class OniGo extends JavaPlugin implements CommandExecutor, Listener
         oniMeta.setDisplayName("§c鬼スタート");
         oniMeta.setLore(Arrays.asList("クリックした人が鬼になる", "他は自動的にプレイヤー陣営"));
         oniStart.setItemMeta(oniMeta);
-        inv.setItem(2, oniStart);
-
-        // 鬼叉スタート
-        ItemStack kisyaStart = new ItemStack(Material.MAGENTA_WOOL);
-        ItemMeta kisyaMeta = kisyaStart.getItemMeta();
-        kisyaMeta.setDisplayName("§d鬼叉スタート");
-        kisyaMeta.setLore(Arrays.asList("クリックした人が鬼叉になる", "突進・停止・金棒スキル使用可"));
-        kisyaStart.setItemMeta(kisyaMeta);
-        inv.setItem(3, kisyaStart);
-
-        // 暗叉スタート
-        ItemStack ansyaStart = new ItemStack(Material.PURPLE_WOOL);
-        ItemMeta ansyaMeta = ansyaStart.getItemMeta();
-        ansyaMeta.setDisplayName("§5暗叉スタート");
-        ansyaMeta.setLore(Arrays.asList("クリックした人が暗叉になる", "暗転スキル使用可"));
-        ansyaStart.setItemMeta(ansyaMeta);
-        inv.setItem(4, ansyaStart);
-
-        // 月牙スタート
-        ItemStack tukiStart = new ItemStack(Material.BLUE_WOOL);
-        ItemMeta tukiMeta = tukiStart.getItemMeta();
-        tukiMeta.setDisplayName("§9月牙スタート");
-        tukiMeta.setLore(Arrays.asList("クリックした人が月牙になる", "三日月・殺月スキル使用可"));
-        tukiStart.setItemMeta(tukiMeta);
-        inv.setItem(5, tukiStart);
+        inv.setItem(4, oniStart);
 
         // ランダム鬼スタート
-        ItemStack randomOniStart = new ItemStack(Material.YELLOW_WOOL);
+        ItemStack randomOniStart = new ItemStack(Material.PURPLE_WOOL);
         ItemMeta randomOniMeta = randomOniStart.getItemMeta();
-        randomOniMeta.setDisplayName("§eランダム鬼スタート");
+        randomOniMeta.setDisplayName("§dランダム鬼スタート");
         randomOniMeta.setLore(Arrays.asList("ランダムで1人を鬼に選ぶ", "陣営選択なしで即開始"));
         randomOniStart.setItemMeta(randomOniMeta);
-        inv.setItem(8, randomOniStart);
+        inv.setItem(6, randomOniStart);
 
         player.openInventory(inv);
     }
@@ -1032,6 +1311,83 @@ public final class OniGo extends JavaPlugin implements CommandExecutor, Listener
         player.openInventory(inv);
     }
 
+    // 鬼タイプ選択GUI
+    public void openOniTypeSelectionGUI(Player player) {
+        Inventory inv = Bukkit.createInventory(null, 9, "鬼タイプ選択");
+
+        // 夜叉
+        ItemStack yashaItem = new ItemStack(Material.NETHER_STAR);
+        ItemMeta yashaMeta = yashaItem.getItemMeta();
+        yashaMeta.setDisplayName(ChatColor.RED + "夜叉");
+        yashaMeta.setLore(Arrays.asList(
+                "通常の鬼。プレイヤーに暗闇効果を与える。",
+                "一撃で殺せる。攻撃アイテム：夜叉、チェスト探知、ワープ"
+        ));
+        yashaItem.setItemMeta(yashaMeta);
+        inv.setItem(1, yashaItem);
+
+        // 鬼叉
+        ItemStack kishaItem = new ItemStack(Material.GOLDEN_AXE);
+        ItemMeta kishaMeta = kishaItem.getItemMeta();
+        kishaMeta.setDisplayName(ChatColor.GOLD + "鬼叉");
+        kishaMeta.setLore(Arrays.asList(
+                "最高速度で歩く鬼。2回攻撃で1キル。",
+                "攻撃アイテム：突進、停止、金棒"
+        ));
+        kishaItem.setItemMeta(kishaMeta);
+        inv.setItem(3, kishaItem);
+
+        // 闇叉
+        ItemStack anshaItem = new ItemStack(Material.COAL);
+        ItemMeta anshaMeta = anshaItem.getItemMeta();
+        anshaMeta.setDisplayName(ChatColor.DARK_PURPLE + "闇叉");
+        anshaMeta.setLore(Arrays.asList(
+                "常に暗闇効果を持つが高速な鬼。",
+                "一撃で殺せる。攻撃アイテム：暗転、転生、逃亡不可"
+        ));
+        anshaItem.setItemMeta(anshaMeta);
+        inv.setItem(5, anshaItem);
+
+        // 月牙
+        ItemStack getsugaItem = new ItemStack(Material.IRON_SWORD);
+        ItemMeta getsugaMeta = getsugaItem.getItemMeta();
+        getsugaMeta.setDisplayName(ChatColor.BLUE + "月牙");
+        getsugaMeta.setLore(Arrays.asList(
+                "チェスト探知能力を持つ鬼。5回攻撃で1キル。",
+                "高速で移動できる。攻撃アイテム：月切り、三日月、殺月"
+        ));
+        getsugaItem.setItemMeta(getsugaMeta);
+        inv.setItem(7, getsugaItem);
+
+        player.openInventory(inv);
+    }
+
+    // 鬼タイプに合わせた速度適用
+    private void applyOniTypeSpeed(Player player, OniType type) {
+        // 速度効果を一旦解除
+        player.removePotionEffect(PotionEffectType.SPEED);
+        player.removePotionEffect(PotionEffectType.getByName("SLOW"));
+
+        int speedLevel = 0;
+        switch (type) {
+            case KISHA:
+                speedLevel = 2; // 最高速度
+                break;
+            case ANSHA:
+                speedLevel = 1; // 1.2倍速
+                break;
+            case GETSUGA:
+                speedLevel = 1; // 1.5倍速
+                break;
+            default:
+                return; // YASHA は標準速度
+        }
+
+        if (speedLevel > 0) {
+            player.addPotionEffect(new PotionEffect(PotionEffectType.SPEED, 999999, speedLevel, false, false));
+        }
+    }
+
     /**
      * ランダム鬼スタート
      */
@@ -1043,30 +1399,8 @@ public final class OniGo extends JavaPlugin implements CommandExecutor, Listener
         }
         Random random = new Random();
         Player oniPlayer = allPlayers.get(random.nextInt(allPlayers.size()));
-
-        // ランダムで鬼タイプも選択
-        GameManager.OniType[] oniTypes = GameManager.OniType.values();
-        GameManager.OniType randomType = oniTypes[random.nextInt(oniTypes.length)];
-        gameManager.setOniType(randomType);
-
-        Bukkit.broadcastMessage(ChatColor.GOLD + "ランダムで " + oniPlayer.getName() + " が" + getOniTypeName(randomType) + "に選ばれた！");
+        Bukkit.broadcastMessage(ChatColor.GOLD + "ランダムで " + oniPlayer.getName() + " が鬼に選ばれた！");
         gameManager.oniStartGame(oniPlayer);
-    }
-
-    /**
-     * 鬼タイプの日本語名を取得
-     */
-    private String getOniTypeName(GameManager.OniType type) {
-        switch (type) {
-            case KISYA:
-                return "鬼叉";
-            case ANSYA:
-                return "暗叉";
-            case TUKI:
-                return "月牙";
-            default:
-                return "鬼";
-        }
     }
 
     // Helper method for GameManager to update scoreboard
