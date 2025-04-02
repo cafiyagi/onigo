@@ -1,6 +1,6 @@
 name: OniGo
 main: org.oni.oniGo.OniGo
-version: 1.6
+version: 1.7
 commands:
   yasha:
     description: 夜叉効果を開始する
@@ -26,6 +26,15 @@ commands:
   onistart:
     description: コマンド実行者を鬼に確定しゲーム開始する
     usage: /onistart
+  kisyastart:
+    description: コマンド実行者を鬼叉に確定しゲーム開始する
+    usage: /kisyastart
+  ansyastart:
+    description: コマンド実行者を暗叉に確定しゲーム開始する
+    usage: /ansyastart
+  tukistart:
+    description: コマンド実行者を月牙に確定しゲーム開始する
+    usage: /tukistart
   set:
     description: チェストやドアなどの条件を登録・変更する
     usage: /set <chest/door> [名前]

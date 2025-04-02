@@ -9,7 +9,6 @@ import org.bukkit.boss.BarStyle;
 import org.bukkit.boss.BossBar;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
-import org.bukkit.potion.PotionEffect;
 import org.bukkit.potion.PotionEffectType;
 import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.scheduler.BukkitTask;
@@ -47,6 +46,17 @@ public class GameManager {
 
     // **追加**：プレイヤー残機
     private Map<UUID, Integer> playerLives = new HashMap<>();
+
+    // 現在の鬼タイプ
+    private OniType currentOniType = OniType.NORMAL;
+
+    // 鬼のタイプ
+    public enum OniType {
+        NORMAL,  // 通常
+        KISYA,   // 鬼叉
+        ANSYA,   // 暗叉
+        TUKI     // 月牙
+    }
 
     public GameManager(OniGo plugin, ConfigManager configManager, EffectManager effectManager,
                        ItemManager itemManager, TeamManager teamManager) {
@@ -130,6 +140,7 @@ public class GameManager {
         exitDoorOpened = false;
         remainingTime = 500;
         exitDoorOpeners.clear();
+        currentOniType = OniType.NORMAL;
 
         if (gameTimerTask != null) {
             gameTimerTask.cancel();
@@ -164,6 +175,7 @@ public class GameManager {
 
         exitDoorOpened = false;
         resetExitDoor();
+
     }
 
     private void resetExitDoor() {
@@ -233,40 +245,61 @@ public class GameManager {
         // スコアボード更新
         updateScoreboard();
 
-        // 各鬼タイプの初期効果適用
+        // 鬼タイプに応じた効果とサウンド
+        startOniTypeEffects();
+
+        Bukkit.broadcastMessage(ChatColor.GREEN + "ゲームスタート！残り時間：" + remainingTime + "秒");
+    }
+
+    /**
+     * 鬼タイプに応じた初期効果
+     */
+    private void startOniTypeEffects() {
+        // 鬼見つける
+        Player oniPlayer = null;
         for (Player p : Bukkit.getOnlinePlayers()) {
             if (teamManager.isPlayerInOniTeam(p)) {
-                OniType oniType = teamManager.getPlayerOniType(p);
-
-                // 鬼タイプの名前と説明をアナウンス
-                Bukkit.broadcastMessage(ChatColor.RED + p.getName() + " は「" + oniType.getDisplayName() + "」として参戦！");
-                Bukkit.broadcastMessage(ChatColor.YELLOW + "能力: " + oniType.getDescription());
-
-                // 鬼タイプごとの初期効果
-                switch (oniType) {
-                    case KISHA:
-                        // 鬼叉は最高速度（通常の鬼より速い）
-                        p.addPotionEffect(new PotionEffect(PotionEffectType.SLOWNESS, 999999, 2, false, false));
-                        break;
-                    case ANSHA:
-                        // 闇叉はプレイヤーの1.2倍速
-                        p.addPotionEffect(new PotionEffect(PotionEffectType.SPEED, 999999, 1, false, false));
-                        // 常に暗闇2
-                        p.addPotionEffect(new PotionEffect(PotionEffectType.DARKNESS, 999999, 2, false, false));
-                        break;
-                    case GETUGA:
-                        // 月牙はプレイヤーの1.5倍速
-                        p.addPotionEffect(new PotionEffect(PotionEffectType.SPEED, 999999, 2, false, false));
-                        break;
-                    default:
-                        // 夜叉はスロウ
-                        p.addPotionEffect(new PotionEffect(PotionEffectType.SLOWNESS, 999999, 2, false, false));
-                        break;
-                }
+                oniPlayer = p;
+                break;
             }
         }
 
-        Bukkit.broadcastMessage(ChatColor.GREEN + "ゲームスタート！残り時間：" + remainingTime + "秒");
+        if (oniPlayer == null) return;
+
+        // 自動的に夜叉効果を起動
+        effectManager.startYashaEffect(oniPlayer);
+
+        // 鬼のタイプ別効果
+        switch (currentOniType) {
+            case KISYA:
+                // 鬼叉の効果
+                for (Player p : Bukkit.getOnlinePlayers()) {
+                    p.playSound(p.getLocation(), EffectManager.KISYA_SOUND, 1.0f, 1.0f);
+                }
+                oniPlayer.sendTitle(ChatColor.RED + "鬼叉モード発動！", "", 10, 40, 10);
+                break;
+
+            case ANSYA:
+                // 暗叉の効果
+                for (Player p : Bukkit.getOnlinePlayers()) {
+                    p.playSound(p.getLocation(), EffectManager.ANSYA_SOUND, 1.0f, 1.0f);
+                }
+                oniPlayer.sendTitle(ChatColor.DARK_PURPLE + "暗叉モード発動！", "", 10, 40, 10);
+                break;
+
+            case TUKI:
+                // 月牙の効果
+                for (Player p : Bukkit.getOnlinePlayers()) {
+                    p.playSound(p.getLocation(), EffectManager.TUKI_SOUND, 1.0f, 1.0f);
+                }
+                oniPlayer.sendTitle(ChatColor.BLUE + "月牙モード発動！", "", 10, 40, 10);
+                break;
+
+            default:
+                // 通常の鬼
+                oniPlayer.sendTitle(ChatColor.RED + "鬼モード発動！", "", 10, 40, 10);
+                break;
+        }
     }
 
     /**
@@ -277,13 +310,15 @@ public class GameManager {
             itemManager.clearPlayerInventory(p);
         }
         teamManager.setupOniStart(oniPlayer);
-
-        // 鬼タイプが設定されていない場合はデフォルトで夜叉に
-        if (teamManager.getPlayerOniType(oniPlayer) == null) {
-            teamManager.setPlayerOniType(oniPlayer, OniType.YASHA);
-        }
-
         startGame(oniPlayer);
+    }
+
+    /**
+     * 特定の鬼タイプでスタート
+     */
+    public void oniTypeStartGame(Player oniPlayer, OniType type) {
+        this.currentOniType = type;
+        oniStartGame(oniPlayer);
     }
 
     /**
@@ -314,12 +349,14 @@ public class GameManager {
                 p.sendTitle(ChatColor.GOLD + "プレイヤー勝利！", ChatColor.AQUA + "過半数が脱出！",
                         10, 70, 20);
             }
+            effectManager.playPlayerVictorySound();
         } else {
             // 鬼勝利
             for (Player p : Bukkit.getOnlinePlayers()) {
                 p.sendTitle(ChatColor.RED + "鬼勝利！", ChatColor.AQUA + "",
                         10, 70, 20);
             }
+            effectManager.playOniVictorySound();
         }
 
         Bukkit.broadcastMessage(ChatColor.GOLD + "========== ゲーム終了 ==========");
@@ -354,6 +391,10 @@ public class GameManager {
         for (Player player : Bukkit.getOnlinePlayers()) {
             player.teleport(spawnLocation);
         }
+
+        // 鬼勝利のサウンド再生
+        effectManager.playOniVictorySound();
+
         resetGame();
     }
 
@@ -372,6 +413,10 @@ public class GameManager {
         for (Player p : Bukkit.getOnlinePlayers()) {
             p.teleport(spawnLocation);
         }
+
+        // 鬼勝利のサウンド再生
+        effectManager.playOniVictorySound();
+
         resetGame();
     }
 
@@ -391,6 +436,10 @@ public class GameManager {
         for (Player player : Bukkit.getOnlinePlayers()) {
             player.teleport(spawnLocation);
         }
+
+        // プレイヤー勝利のサウンド再生
+        effectManager.playPlayerVictorySound();
+
         resetGame();
     }
 
@@ -410,6 +459,10 @@ public class GameManager {
         for (Player p : Bukkit.getOnlinePlayers()) {
             p.teleport(spawnLocation);
         }
+
+        // プレイヤー勝利のサウンド再生
+        effectManager.playPlayerVictorySound();
+
         resetGame();
     }
 
@@ -477,7 +530,7 @@ public class GameManager {
                 };
                 int randomIndex = (int)(Math.random() * oniSpawns.length);
                 p.teleport(oniSpawns[randomIndex]);
-                p.setFoodLevel(20); // 鬼叉のために空腹ゲージを最大に
+                p.setFoodLevel(2);
                 p.setGameMode(GameMode.ADVENTURE);
             } else if (teamManager.isPlayerInPlayerTeam(p)) {
                 p.teleport(new Location(p.getWorld(), 0, 2, 0));
@@ -663,12 +716,6 @@ public class GameManager {
         if (!gameRunning) return;
         if (!teamManager.isPlayerInOniTeam(oniPlayer)) return;
 
-        // 夜叉タイプのみ使用可能なアイテム（チェストコンパス）
-        if (teamManager.getPlayerOniType(oniPlayer) != OniType.YASHA) {
-            oniPlayer.sendMessage(ChatColor.RED + "夜叉タイプのみが使用できるアイテムだよ！");
-            return;
-        }
-
         UUID oniUuid = oniPlayer.getUniqueId();
         if (itemManager.isChestDetectorOnCooldown(oniUuid)) {
             int remain = itemManager.getChestDetectorRemainingCooldown(oniUuid);
@@ -740,12 +787,6 @@ public class GameManager {
     public void teleportToNearbyChest(Player oniPlayer) {
         if (!gameRunning) return;
         if (!teamManager.isPlayerInOniTeam(oniPlayer)) return;
-
-        // 夜叉タイプのみ使用可能なアイテム（チェストワープ）
-        if (teamManager.getPlayerOniType(oniPlayer) != OniType.YASHA) {
-            oniPlayer.sendMessage(ChatColor.RED + "夜叉タイプのみが使用できるアイテムだよ！");
-            return;
-        }
 
         UUID oniUuid = oniPlayer.getUniqueId();
         if (itemManager.isChestTeleporterOnCooldown(oniUuid)) {
@@ -860,7 +901,7 @@ public class GameManager {
         Random rand = new Random();
         Location targetLoc = chestLocs.get(rand.nextInt(chestLocs.size())).clone().add(0,1,0);
         // 暗闇
-        player.addPotionEffect(new PotionEffect(PotionEffectType.BLINDNESS, 20 * 3, 1, false, false));
+        player.addPotionEffect(new org.bukkit.potion.PotionEffect(PotionEffectType.BLINDNESS, 20 * 3, 1, false, false));
         player.playSound(player.getLocation(), Sound.ENTITY_ENDERMAN_TELEPORT, 1f, 1f);
 
         // テレポート
@@ -869,6 +910,66 @@ public class GameManager {
         player.playSound(player.getLocation(), Sound.ENTITY_ENDERMAN_TELEPORT, 1f, 0.7f);
 
         itemManager.setPlayerEscapeCooldown(pid);
+    }
+
+    /**
+     * 鬼叉の突進スキル使用
+     */
+    public void useKisyaTossinSkill(Player player) {
+        if (!gameRunning) return;
+        if (!teamManager.isPlayerInOniTeam(player)) return;
+
+        effectManager.useOniTossinSkill(player);
+    }
+
+    /**
+     * 鬼叉の停止スキル使用
+     */
+    public void useKisyaTeisiSkill(Player player) {
+        if (!gameRunning) return;
+        if (!teamManager.isPlayerInOniTeam(player)) return;
+
+        effectManager.useOniTeisiSkill(player);
+    }
+
+    /**
+     * 鬼叉の金棒スキル使用
+     */
+    public void useKisyaKanaboSkill(Player player) {
+        if (!gameRunning) return;
+        if (!teamManager.isPlayerInOniTeam(player)) return;
+
+        effectManager.useOniKanaboSkill(player);
+    }
+
+    /**
+     * 暗叉の暗転スキル使用
+     */
+    public void useAnsyaAntenSkill(Player player) {
+        if (!gameRunning) return;
+        if (!teamManager.isPlayerInOniTeam(player)) return;
+
+        effectManager.useAntenSkill(player);
+    }
+
+    /**
+     * 月牙の三日月スキル使用
+     */
+    public void useTukiMikadukiSkill(Player player) {
+        if (!gameRunning) return;
+        if (!teamManager.isPlayerInOniTeam(player)) return;
+
+        effectManager.useMikadukiSkill(player);
+    }
+
+    /**
+     * 月牙の殺月スキル使用
+     */
+    public void useTukiSatsukiSkill(Player player) {
+        if (!gameRunning) return;
+        if (!teamManager.isPlayerInOniTeam(player)) return;
+
+        effectManager.useSatsukiSkill(player);
     }
 
     /**
@@ -1045,8 +1146,11 @@ public class GameManager {
         return remainingChests;
     }
 
-    // 新規メソッド: プレイヤーの残機を取得
-    public Map<UUID, Integer> getPlayerLives() {
-        return playerLives;
+    public void setOniType(OniType type) {
+        this.currentOniType = type;
+    }
+
+    public OniType getCurrentOniType() {
+        return currentOniType;
     }
 }
