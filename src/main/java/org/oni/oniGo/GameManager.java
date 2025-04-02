@@ -1,11 +1,6 @@
 package org.oni.oniGo;
 
-import org.bukkit.Bukkit;
-import org.bukkit.ChatColor;
-import org.bukkit.GameMode;
-import org.bukkit.Location;
-import org.bukkit.Material;
-import org.bukkit.Sound;
+import org.bukkit.*;
 import org.bukkit.block.Block;
 import org.bukkit.block.data.BlockData;
 import org.bukkit.block.data.Openable;
@@ -14,19 +9,11 @@ import org.bukkit.boss.BarStyle;
 import org.bukkit.boss.BossBar;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
-import org.bukkit.potion.PotionEffect;
 import org.bukkit.potion.PotionEffectType;
 import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.scheduler.BukkitTask;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Random;
-import java.util.Set;
-import java.util.UUID;
+import java.util.*;
 
 public class GameManager {
     private final OniGo plugin;
@@ -40,25 +27,25 @@ public class GameManager {
     private BukkitTask gameTimerTask;
     private BossBar timerBar;
 
-    // Door open states
     private boolean doorOpened = false;
     private boolean exitDoorOpened = false;
-
-    // Exit door auto-close task
     private BukkitTask exitDoorCloseTask = null;
 
-    // Player respawn tasks
+    // リスポーンタスク
     private Map<UUID, BukkitTask> respawnTasks = new HashMap<>();
 
-    // Per-player chest tracking
+    // 各プレイヤーごとのカウントチェスト
     private Map<UUID, Integer> playerRequiredCountChests = new HashMap<>();
     private Map<UUID, Integer> playerOpenedCountChests = new HashMap<>();
 
     // 残りチェスト数
     private int remainingChests = 0;
 
-    // 出口扉を開けたプレイヤーの追跡
+    // 出口ドアを開けたプレイヤー
     private Set<UUID> exitDoorOpeners = new HashSet<>();
+
+    // **追加**：プレイヤー残機
+    private Map<UUID, Integer> playerLives = new HashMap<>();
 
     public GameManager(OniGo plugin, ConfigManager configManager, EffectManager effectManager,
                        ItemManager itemManager, TeamManager teamManager) {
@@ -68,82 +55,89 @@ public class GameManager {
         this.itemManager = itemManager;
         this.teamManager = teamManager;
 
-        // Initialize boss bar
+        // BossBar
         timerBar = Bukkit.createBossBar("残り時間: " + remainingTime + "秒", BarColor.GREEN, BarStyle.SOLID);
     }
 
     /**
-     * Start the game with normal mode
+     * 通常スタート
      */
     public boolean startGame(Player sender) {
-        // Check if all players have selected a team
         if (teamManager.areAnyPlayersUnassigned()) {
-            sendConfigMessage(sender, ChatColor.RED + "選択していない人がいるよ。");
+            sendConfigMessage(sender, ChatColor.RED + "陣営を選択していない人がいるよ。");
             return false;
         }
-
         if (gameRunning) {
             sendConfigMessage(sender, ChatColor.RED + "ゲームはすでに進行中だよ！");
             return false;
         }
-
-        // Clear inventories to be safe
+        // 安全のため全員のインベントリクリア
         for (Player p : Bukkit.getOnlinePlayers()) {
             itemManager.clearPlayerInventory(p);
         }
-
-        // 完全にリセット
+        // 完全リセット
         fullReset();
 
-        // Initialize game state
         gameRunning = true;
         doorOpened = false;
         exitDoorOpened = false;
+
         teamManager.initializeGameState();
 
-        // Reset all chest statuses
+        // チェストリセット
         configManager.resetChests();
 
-        // Initialize per-player chest counts
+        // カウントチェスト状況リセット
         initializePlayerChestCounts();
 
-        // Initialize kakure dama (hiding orb) timers
+        // 隠れ玉初期化（1人15秒）
         effectManager.initializeKakureDama(15);
 
-        // Reset all item cooldowns
+        // クールダウンリセット
         itemManager.resetAllCooldowns();
 
-        // 残りチェスト数を設定
+        // 残りチェスト更新
         updateRemainingChests();
 
-        // Start countdown before game starts
+        // **残機(3)の割り当て**
+        assignPlayerLives();
+
+        // カウントダウン開始（3,2,1 -> START）
         startGameCountdown(sender);
 
         return true;
     }
 
     /**
-     * 完全にリセットする
+     * 残機を全プレイヤー(プレイヤーチームのみ)に3付与
+     */
+    private void assignPlayerLives() {
+        playerLives.clear();
+        for (Player p : Bukkit.getOnlinePlayers()) {
+            if (teamManager.isPlayerInPlayerTeam(p)) {
+                playerLives.put(p.getUniqueId(), 3);
+            }
+        }
+    }
+
+    /**
+     * 完全リセット
      */
     private void fullReset() {
         gameRunning = false;
         doorOpened = false;
         exitDoorOpened = false;
         remainingTime = 500;
-        exitDoorOpeners.clear(); // 出口扉を開けた人のリストをクリア
+        exitDoorOpeners.clear();
 
-        // Cancel all tasks
         if (gameTimerTask != null) {
             gameTimerTask.cancel();
             gameTimerTask = null;
         }
-
         if (exitDoorCloseTask != null) {
             exitDoorCloseTask.cancel();
             exitDoorCloseTask = null;
         }
-
-        // Cancel all respawn tasks
         for (UUID uuid : new ArrayList<>(respawnTasks.keySet())) {
             BukkitTask task = respawnTasks.get(uuid);
             if (task != null) {
@@ -152,52 +146,67 @@ public class GameManager {
         }
         respawnTasks.clear();
 
-        // Reset player states
         for (Player player : Bukkit.getOnlinePlayers()) {
             player.setGameMode(GameMode.SURVIVAL);
             player.setFoodLevel(20);
             effectManager.clearAllPotionEffects(player);
         }
-
-        // Reset maps
         playerRequiredCountChests.clear();
         playerOpenedCountChests.clear();
 
-        // Reset timerbar
+        // ボスバー
         if (timerBar != null) {
             timerBar.removeAll();
             timerBar.setProgress(1.0);
             timerBar.setTitle("残り時間: " + remainingTime + "秒");
         }
+
+        exitDoorOpened = false;
+        resetExitDoor();
+
+    }
+
+    private void resetExitDoor() {
+        Location exitDoorLoc = configManager.getExitDoorLocation();
+        if (exitDoorLoc != null) {
+            Block block = exitDoorLoc.getBlock();
+            if (block.getType().toString().contains("DOOR")) {
+                BlockData data = block.getBlockData();
+                if (data instanceof Openable) {
+                    Openable door = (Openable) data;
+                    door.setOpen(false);
+                    block.setBlockData(door);
+                } else {
+                    // フォールバック処理
+                    block.setType(Material.AIR);
+                }
+            }
+        }
     }
 
     /**
-     * Start countdown before actual game start
+     * カウントダウン -> 実際の開始
      */
     private void startGameCountdown(Player sender) {
         new BukkitRunnable() {
             int count = 3;
-
             @Override
             public void run() {
                 if (count > 0) {
-                    // Display countdown to all players
                     for (Player p : Bukkit.getOnlinePlayers()) {
-                        p.sendTitle(
-                                ChatColor.RED + "" + count,
-                                ChatColor.GOLD + "ゲーム開始まで...",
-                                0, 20, 10
-                        );
-                        p.playSound(p.getLocation(), Sound.BLOCK_NOTE_BLOCK_PLING, 1.0f, 1.0f);
+                        p.sendTitle(ChatColor.RED + "" + count, ChatColor.GOLD + "ゲーム開始まで...",
+                                0, 20, 10);
+                        p.playSound(p.getLocation(), Sound.BLOCK_NOTE_BLOCK_PLING, 1f, 1f);
                     }
                     count--;
                 } else {
-                    // エンダードラゴンの鳴き声を再生
+                    // カウントダウン完了
                     for (Player p : Bukkit.getOnlinePlayers()) {
-                        p.playSound(p.getLocation(), Sound.ENTITY_ENDER_DRAGON_GROWL, 1.0f, 1.0f);
+                        p.playSound(p.getLocation(), Sound.ENTITY_ENDER_DRAGON_GROWL, 1f, 1f);
+                        // 画面中央に「鬼ごっこSTART!」
+                        p.sendTitle(ChatColor.GOLD + "" + ChatColor.BOLD + "鬼ごっこSTART", "",
+                                10, 30, 10);
                     }
-
-                    // Start the actual game when countdown ends
                     actualGameStart();
                     this.cancel();
                 }
@@ -206,95 +215,83 @@ public class GameManager {
     }
 
     /**
-     * Actual game start after countdown
+     * 実際のゲーム開始
      */
     private void actualGameStart() {
-        // Teleport players to their spawn locations
+        // スポーン振り分け
         teleportPlayersToSpawns();
-
-        // Give team items
+        // チーム別アイテム
         itemManager.distributeTeamItems();
-
-        // Start game timer
+        // ゲームタイマー
         startGameTimer();
         timerBar.setProgress(1.0);
         for (Player p : Bukkit.getOnlinePlayers()) {
             timerBar.addPlayer(p);
         }
-
-        // Start oni slowness effect
+        // 鬼スロウ
         effectManager.startOniSlownessTask();
-
-        // Update scoreboard
+        // スコアボード更新
         updateScoreboard();
 
-        Bukkit.broadcastMessage(ChatColor.GREEN + "ゲームスタート！残り時間: " + remainingTime + "秒");
+        Bukkit.broadcastMessage(ChatColor.GREEN + "ゲームスタート！残り時間：" + remainingTime + "秒");
     }
 
     /**
-     * Initialize per-player chest counts
-     */
-    private void initializePlayerChestCounts() {
-        playerRequiredCountChests.clear();
-        playerOpenedCountChests.clear();
-
-        int requiredPerPlayer = configManager.getRequiredCountChests();
-
-        for (Player p : Bukkit.getOnlinePlayers()) {
-            if (teamManager.isPlayerInPlayerTeam(p)) {
-                UUID playerId = p.getUniqueId();
-                playerRequiredCountChests.put(playerId, requiredPerPlayer);
-                playerOpenedCountChests.put(playerId, 0);
-            }
-        }
-    }
-
-    /**
-     * Start the game with one player as oni
+     * プレイヤー1人を鬼にしてゲーム開始
      */
     public void oniStartGame(Player oniPlayer) {
-        // Clear player inventories
         for (Player p : Bukkit.getOnlinePlayers()) {
             itemManager.clearPlayerInventory(p);
         }
-
-        // Setup teams with specified player as oni
         teamManager.setupOniStart(oniPlayer);
-
-        // Start the game
         startGame(oniPlayer);
     }
 
     /**
-     * Stop the game
+     * ゲーム停止
      */
     public void stopGame(Player sender) {
         if (!gameRunning) {
-            sendConfigMessage(sender, ChatColor.RED + "ゲームが開始されていないよ！");
+            sendConfigMessage(sender, ChatColor.RED + "ゲームは開始してないよ！");
             return;
         }
-
-        Bukkit.broadcastMessage(ChatColor.GOLD + "========= ゲーム中断 =========");
-        Bukkit.broadcastMessage(ChatColor.YELLOW + "管理者によりゲーム中断されたよ");
-        Bukkit.broadcastMessage(ChatColor.GOLD + "============================");
-
+        Bukkit.broadcastMessage(ChatColor.GOLD + "======= ゲーム中断 =======");
+        Bukkit.broadcastMessage(ChatColor.YELLOW + "管理者が中断したよ");
+        Bukkit.broadcastMessage(ChatColor.GOLD + "=========================");
         resetGame();
-        sendConfigMessage(sender, ChatColor.GREEN + "ゲームを停止したよ！");
+        sendConfigMessage(sender, ChatColor.GREEN + "ゲームを停止したよ");
     }
 
     /**
-     * End the game with win message
+     * ゲーム終了
      */
     private void endGame() {
         gameRunning = false;
+        // 残り時間0になったときの勝敗判定
+        boolean halfEscaped = teamManager.haveHalfPlayersEscaped();
+        if (halfEscaped) {
+            // プレイヤー勝利
+            for (Player p : Bukkit.getOnlinePlayers()) {
+                p.sendTitle(ChatColor.GOLD + "プレイヤー勝利！", ChatColor.AQUA + "過半数が脱出！",
+                        10, 70, 20);
+            }
+        } else {
+            // 鬼勝利
+            for (Player p : Bukkit.getOnlinePlayers()) {
+                p.sendTitle(ChatColor.RED + "鬼勝利！", ChatColor.AQUA + "",
+                        10, 70, 20);
+            }
+        }
 
-        String winMessage = teamManager.getWinMessage();
+        Bukkit.broadcastMessage(ChatColor.GOLD + "========== ゲーム終了 ==========");
+        if (halfEscaped) {
+            Bukkit.broadcastMessage(ChatColor.BLUE + "プレイヤー陣営の勝利！");
+        } else {
+            Bukkit.broadcastMessage(ChatColor.RED + "鬼陣営の勝利！");
+        }
+        Bukkit.broadcastMessage(ChatColor.GOLD + "================================");
 
-        Bukkit.broadcastMessage(ChatColor.GOLD + "========= ゲーム終了 =========");
-        Bukkit.broadcastMessage(winMessage);
-        Bukkit.broadcastMessage(ChatColor.GOLD + "===========================");
-
-        // Teleport all players back to spawn
+        // 全員を初期スポーンへ
         Location spawnLocation = configManager.getInitialSpawnLocation();
         for (Player player : Bukkit.getOnlinePlayers()) {
             player.teleport(spawnLocation);
@@ -304,117 +301,88 @@ public class GameManager {
     }
 
     /**
-     * End game with player defeat (all players dead/captured)
+     * プレイヤー全滅
      */
     public void endGameWithPlayerDefeat() {
         gameRunning = false;
-
-        Bukkit.broadcastMessage(ChatColor.GOLD + "========= ゲーム終了 =========");
+        for (Player p : Bukkit.getOnlinePlayers()) {
+            p.sendTitle(ChatColor.RED + "鬼陣営の勝利！", ChatColor.GRAY + "プレイヤー全滅", 10, 70, 20);
+        }
+        Bukkit.broadcastMessage(ChatColor.GOLD + "======= ゲーム終了 =======");
         Bukkit.broadcastMessage(ChatColor.RED + "プレイヤー全滅！鬼陣営の勝利！");
-        Bukkit.broadcastMessage(ChatColor.GOLD + "===========================");
-
-        // Teleport all players back to spawn
+        Bukkit.broadcastMessage(ChatColor.GOLD + "=========================");
         Location spawnLocation = configManager.getInitialSpawnLocation();
         for (Player player : Bukkit.getOnlinePlayers()) {
             player.teleport(spawnLocation);
         }
-
         resetGame();
     }
 
     /**
-     * End game with one-hit kill message (when only one player exists)
+     * 一撃必殺（1人しかプレイヤーいないとき）
      */
     public void endGameWithOneHitKill() {
         gameRunning = false;
-
-        Bukkit.broadcastMessage(ChatColor.GOLD + "========= ゲーム終了 =========");
-        Bukkit.broadcastMessage(ChatColor.RED + "一撃必殺！プレイヤー全滅！鬼陣営の勝利！");
-        Bukkit.broadcastMessage(ChatColor.GOLD + "===========================");
-
-        // Teleport all players back to spawn
+        for (Player p : Bukkit.getOnlinePlayers()) {
+            p.sendTitle(ChatColor.RED + "一撃必殺！", ChatColor.DARK_RED + "プレイヤー陣営全滅…鬼勝利", 10, 70, 20);
+        }
+        Bukkit.broadcastMessage(ChatColor.GOLD + "======= ゲーム終了 =======");
+        Bukkit.broadcastMessage(ChatColor.RED + "一撃必殺！鬼陣営の勝利！");
+        Bukkit.broadcastMessage(ChatColor.GOLD + "=========================");
         Location spawnLocation = configManager.getInitialSpawnLocation();
         for (Player p : Bukkit.getOnlinePlayers()) {
             p.teleport(spawnLocation);
         }
-
         resetGame();
     }
 
     /**
-     * End game with player victory (more than half escaped)
+     * 過半数脱出によるプレイヤー勝利
      */
     public void endGameWithPlayerVictory() {
         gameRunning = false;
-
-        // 実績解除の音と勝利表示
         for (Player p : Bukkit.getOnlinePlayers()) {
-            p.playSound(p.getLocation(), Sound.UI_TOAST_CHALLENGE_COMPLETE, 1.0f, 1.0f);
-            p.sendTitle(
-                    ChatColor.GOLD + "プレイヤー陣営勝利！",
-                    ChatColor.AQUA + "過半数のプレイヤーが脱出に成功！",
-                    10, 70, 20
-            );
+            p.sendTitle(ChatColor.GOLD + "プレイヤー勝利！", ChatColor.AQUA + "過半数が脱出成功！",
+                    10, 70, 20);
         }
-
-        Bukkit.broadcastMessage(ChatColor.GOLD + "========= ゲーム終了 =========");
-        Bukkit.broadcastMessage(ChatColor.BLUE + "過半数のプレイヤーが脱出に成功！プレイヤー陣営の勝利！");
-        Bukkit.broadcastMessage(ChatColor.GOLD + "===========================");
-
-        // Teleport all players back to spawn
+        Bukkit.broadcastMessage(ChatColor.GOLD + "======= ゲーム終了 =======");
+        Bukkit.broadcastMessage(ChatColor.BLUE + "プレイヤー陣営の勝利！");
+        Bukkit.broadcastMessage(ChatColor.GOLD + "=========================");
         Location spawnLocation = configManager.getInitialSpawnLocation();
         for (Player player : Bukkit.getOnlinePlayers()) {
             player.teleport(spawnLocation);
         }
-
         resetGame();
     }
 
     /**
-     * End game with exit door victory (more than half opened exit door)
+     * 出口ドアを開けた数が過半数により勝利
      */
     public void endGameWithExitDoorVictory() {
         gameRunning = false;
-
-        // 実績解除の音と勝利表示
         for (Player p : Bukkit.getOnlinePlayers()) {
-            p.playSound(p.getLocation(), Sound.UI_TOAST_CHALLENGE_COMPLETE, 1.0f, 1.0f);
-            p.sendTitle(
-                    ChatColor.GOLD + "プレイヤー陣営勝利！",
-                    ChatColor.AQUA + "過半数のプレイヤーが出口ドアを開けました！",
-                    10, 70, 20
-            );
+            p.sendTitle(ChatColor.GOLD + "プレイヤー勝利！", ChatColor.AQUA + "",
+                    10, 70, 20);
         }
-
-        Bukkit.broadcastMessage(ChatColor.GOLD + "========= ゲーム終了 =========");
-        Bukkit.broadcastMessage(ChatColor.BLUE + "過半数のプレイヤーが出口ドアを開きました！プレイヤー陣営の勝利！");
-        Bukkit.broadcastMessage(ChatColor.GOLD + "===========================");
-
-        // Teleport all players back to spawn
+        Bukkit.broadcastMessage(ChatColor.GOLD + "======= ゲーム終了 =======");
+        Bukkit.broadcastMessage(ChatColor.BLUE + "過半数のプレイヤーが出口ドアを開けました！");
+        Bukkit.broadcastMessage(ChatColor.GOLD + "=========================");
         Location spawnLocation = configManager.getInitialSpawnLocation();
-        for (Player player : Bukkit.getOnlinePlayers()) {
-            player.teleport(spawnLocation);
+        for (Player p : Bukkit.getOnlinePlayers()) {
+            p.teleport(spawnLocation);
         }
-
         resetGame();
     }
 
     /**
-     * Reset the game completely
+     * ゲーム完全リセット
      */
     public void resetGame() {
-        // 完全リセット
         fullReset();
-
-        // Clear effects from all players
         effectManager.clearAllEffects();
-
-        // Reset player inventories
         for (Player player : Bukkit.getOnlinePlayers()) {
             itemManager.clearPlayerInventory(player);
         }
-
-        // Teleport all players to spawn
         Location spawnLocation = configManager.getInitialSpawnLocation();
         for (Player player : Bukkit.getOnlinePlayers()) {
             player.teleport(spawnLocation);
@@ -422,14 +390,14 @@ public class GameManager {
     }
 
     /**
-     * Start the game timer
+     * タイマー開始
      */
     private void startGameTimer() {
         if (gameTimerTask != null) {
             gameTimerTask.cancel();
         }
-
         gameTimerTask = new BukkitRunnable() {
+            int lastCountdown = 5; // 5秒カウントダウン用
             @Override
             public void run() {
                 remainingTime--;
@@ -437,7 +405,21 @@ public class GameManager {
                 timerBar.setProgress(Math.max(0, remainingTime / 500.0));
                 updateScoreboard();
 
-                if (remainingTime <= 0) {
+                // 残り5秒からカウントダウン
+                if (remainingTime <= 5 && remainingTime > 0) {
+                    // 5,4,3,2,1と画面中央に表示
+                    for (Player p : Bukkit.getOnlinePlayers()) {
+                        p.sendTitle(ChatColor.RED + "" + remainingTime, ChatColor.GRAY + "もうすぐ終了…",
+                                0, 25, 0);
+                        p.playSound(p.getLocation(), Sound.BLOCK_NOTE_BLOCK_PLING, 1f, 1f);
+                    }
+                }
+                if (remainingTime == 0) {
+                    // 鬼ごっこ終了
+                    for (Player p : Bukkit.getOnlinePlayers()) {
+                        p.sendTitle(ChatColor.GOLD + "鬼ごっこ終了！", "", 10, 40, 10);
+                    }
+                    // 過半数脱出チェック
                     endGame();
                     cancel();
                 }
@@ -446,21 +428,19 @@ public class GameManager {
     }
 
     /**
-     * Teleport players to their team spawn locations
+     * スポーン振り分け
      */
     private void teleportPlayersToSpawns() {
         for (Player p : Bukkit.getOnlinePlayers()) {
             if (teamManager.isPlayerInOniTeam(p)) {
-                // Oni spawn points
-                Location[] oniSpawns = new Location[]{
+                Location[] oniSpawns = new Location[] {
                         new Location(p.getWorld(), -2, -4, -24)
                 };
-                int randomIndex = (int) (Math.random() * oniSpawns.length);
+                int randomIndex = (int)(Math.random() * oniSpawns.length);
                 p.teleport(oniSpawns[randomIndex]);
-                p.setFoodLevel(2);  // Oni players have low food level
+                p.setFoodLevel(2);
                 p.setGameMode(GameMode.ADVENTURE);
             } else if (teamManager.isPlayerInPlayerTeam(p)) {
-                // Player spawn
                 p.teleport(new Location(p.getWorld(), 0, 2, 0));
                 p.setGameMode(GameMode.ADVENTURE);
             }
@@ -468,15 +448,20 @@ public class GameManager {
     }
 
     /**
-     * Update the scoreboard
+     * スコアボード更新
      */
     public void updateScoreboard() {
-        teamManager.updateScoreboard(remainingTime, effectManager.getKakureDamaRemaining(),
-                playerOpenedCountChests, playerRequiredCountChests, remainingChests);
+        teamManager.updateScoreboard(
+                remainingTime,
+                effectManager.getKakureDamaRemaining(),
+                playerOpenedCountChests,
+                playerRequiredCountChests,
+                remainingChests
+        );
     }
 
     /**
-     * Update the remaining chests count
+     * 残りチェスト更新
      */
     public void updateRemainingChests() {
         int totalChests = configManager.getTotalCountChests();
@@ -486,37 +471,56 @@ public class GameManager {
     }
 
     /**
-     * Handle player death and respawn
+     * プレイヤー死亡時の処理
      */
     public void handlePlayerDeath(Player player) {
-        if (!gameRunning || !teamManager.isPlayerInPlayerTeam(player)) {
-            return;
-        }
+        if (!gameRunning) return;
+        if (!teamManager.isPlayerInPlayerTeam(player)) return;
 
-        // Switch to spectator mode
+        // 残機を減らす
+        UUID pid = player.getUniqueId();
+        int lives = playerLives.getOrDefault(pid, 0);
+        lives--;
+        playerLives.put(pid, lives);
+
+        // インベントリをドロップさせず、出口の鍵は保持したままにしたい場合はKeepInventory
+        // ただし他のアイテムは落としてもいいかも…という場合は細かく制御する必要あり
+        // ここでは全部保持にしとく
         player.setGameMode(GameMode.SPECTATOR);
-        player.sendMessage(ChatColor.RED + "死亡したよ。5秒後に復活する…");
+        player.sendMessage(ChatColor.RED + "やられた… 残機: " + lives);
         updateScoreboard();
 
-        // Check if any survivors remain
-        int survivors = teamManager.countSurvivingPlayers();
-        if (survivors == 0) {
-            // Check if there was just one player in the game
-            if (teamManager.getInitialPlayerCount() == 1) {
-                endGameWithOneHitKill();
-            } else {
-                endGameWithPlayerDefeat();
+        // 残機が0なら復活なし
+        if (lives <= 0) {
+            player.sendMessage(ChatColor.DARK_RED + "残機がなくなりました。");
+            // まだ生存者がいるか確認
+            int survivors = teamManager.countSurvivingPlayers();
+            if (survivors == 0) {
+                // 全滅
+                if (teamManager.getInitialPlayerCount() == 1) {
+                    endGameWithOneHitKill();
+                } else {
+                    endGameWithPlayerDefeat();
+                }
             }
             return;
         }
 
-        // Create respawn task
-        respawnTasks.put(player.getUniqueId(), new BukkitRunnable() {
+        // まだ残機があるので5秒後に復活
+        respawnTasks.put(pid, new BukkitRunnable() {
             @Override
             public void run() {
                 if (gameRunning) {
+                    // チェストのうち1つ「最初のカウントチェスト」を探す
+                    Location respawnLoc = plugin.getConfigManager().getInitialSpawnLocation();
+                    if (!plugin.getConfigManager().getCountChestLocations().isEmpty()) {
+                        // 適当に最初のやつ
+                        Location chestLoc = plugin.getConfigManager().getCountChestLocations().values().iterator().next();
+                        respawnLoc = chestLoc.clone().add(0, 1, 0);
+                    }
+                    player.teleport(respawnLoc);
                     player.setGameMode(GameMode.ADVENTURE);
-                    player.sendMessage(ChatColor.GREEN + "復活したよ！");
+                    player.sendMessage(ChatColor.GREEN + "復活");
                     player.removePotionEffect(PotionEffectType.INVISIBILITY);
                     player.removePotionEffect(PotionEffectType.SLOWNESS);
                     updateScoreboard();
@@ -526,176 +530,155 @@ public class GameManager {
     }
 
     /**
-     * Handle player escape detection
+     * 脱出確認
      */
     public void checkPlayerEscape(Player player) {
-        if (!gameRunning || !teamManager.isPlayerInPlayerTeam(player)) {
-            return;
-        }
+        if (!gameRunning) return;
+        if (!teamManager.isPlayerInPlayerTeam(player)) return;
+        if (player.getGameMode() == GameMode.SPECTATOR) return;
+        if (teamManager.getEscapedPlayers().contains(player.getUniqueId())) return;
 
-        if (player.getGameMode() == GameMode.SPECTATOR) {
-            return;
-        }
-
-        if (teamManager.getEscapedPlayers().contains(player.getUniqueId())) {
-            return;
-        }
-
-        // 通常の脱出地点判定
         Location escapeLoc = configManager.getEscapeLocation();
         Location playerLoc = player.getLocation();
         if (playerLoc.getWorld().equals(escapeLoc.getWorld()) &&
                 playerLoc.distance(escapeLoc) <= 3) {
-
-            // Check if the exit door has been opened
+            // 出口ドア開いてるかチェック
             if (exitDoorOpened) {
-                // Player has escaped
                 teamManager.addEscapedPlayer(player);
-                player.sendMessage(ChatColor.GREEN + "脱出地点に到達しました！");
-                Bukkit.broadcastMessage(ChatColor.AQUA + player.getName() + "が脱出地点に到達しました！");
+                player.sendMessage(ChatColor.GREEN + "脱出成功！");
+                Bukkit.broadcastMessage(ChatColor.AQUA + player.getName() + "が脱出した！");
+                player.playSound(player.getLocation(), Sound.ENTITY_PLAYER_LEVELUP, 1f, 1f);
 
-                // Play sound
-                player.playSound(player.getLocation(), Sound.ENTITY_PLAYER_LEVELUP, 1.0f, 1.0f);
-
-                // Update scoreboard
                 updateScoreboard();
 
-                // Check if enough players escaped for victory
                 if (teamManager.haveHalfPlayersEscaped()) {
                     endGameWithPlayerVictory();
                 }
             } else {
-                // Exit door is not open yet
-                player.sendMessage(ChatColor.RED + "出口のドアが閉まっています。鍵を使ってドアを開けましょう！");
+                player.sendMessage(ChatColor.RED + "出口ドアが閉まっている…鍵で開けよう！");
             }
         }
     }
 
     /**
-     * Handle regular chest opened event
+     * 通常チェスト開封
      */
     public void handleChestOpened(String chestName, Player player) {
-        if (!gameRunning || teamManager.isPlayerInOniTeam(player)) return;
-
+        if (!gameRunning) return;
+        if (teamManager.isPlayerInOniTeam(player)) return;
         if (!configManager.isChestOpened(chestName)) {
             configManager.setChestOpened(chestName, true);
-            player.sendMessage(ChatColor.AQUA + "チェスト「" + chestName + "」を開封したよ！");
-            player.playSound(player.getLocation(), Sound.BLOCK_CHEST_OPEN, 1.0f, 1.0f);
+            player.sendMessage(ChatColor.AQUA + "チェスト「" + chestName + "」開封");
+            player.playSound(player.getLocation(), Sound.BLOCK_CHEST_OPEN, 1f, 1f);
         }
     }
 
     /**
-     * Handle count chest opened event
+     * カウントチェスト開封
      */
     public void handleCountChestOpened(String chestName, Player player) {
-        if (!gameRunning || teamManager.isPlayerInOniTeam(player)) return;
+        if (!gameRunning) return;
+        if (teamManager.isPlayerInOniTeam(player)) return;
 
-        UUID playerId = player.getUniqueId();
-
+        UUID pid = player.getUniqueId();
         if (!configManager.isCountChestOpened(chestName)) {
             configManager.setCountChestOpened(chestName, true);
+            int currentOpened = playerOpenedCountChests.getOrDefault(pid, 0) + 1;
+            playerOpenedCountChests.put(pid, currentOpened);
 
-            // Increment player's opened chest count
-            int currentOpened = playerOpenedCountChests.getOrDefault(playerId, 0) + 1;
-            playerOpenedCountChests.put(playerId, currentOpened);
+            int required = playerRequiredCountChests.getOrDefault(pid, configManager.getRequiredCountChests());
+            player.sendMessage(ChatColor.GOLD + "カウントチェスト「" + chestName + "」を開封。 残り" + (required - currentOpened) + "個");
+            player.playSound(player.getLocation(), Sound.BLOCK_CHEST_OPEN, 1f, 1f);
 
-            int required = playerRequiredCountChests.getOrDefault(playerId, configManager.getRequiredCountChests());
-
-            player.sendMessage(ChatColor.GOLD + "カウントチェスト「" + chestName + "」を開封したよ！残り" +
-                    (required - currentOpened) + "個。");
-            player.playSound(player.getLocation(), Sound.BLOCK_CHEST_OPEN, 1.0f, 1.0f);
-
-            // Check if this player has opened enough chests
             if (currentOpened >= required) {
-                player.sendMessage(ChatColor.GOLD + "必要な数のカウントチェストを開けた！出口の鍵を入手した。");
-
-                // Give this player an exit key
+                player.sendMessage(ChatColor.GOLD + "必要数チェストすべて開けた。出口の鍵をゲット");
+                // 鍵付与
                 ItemStack exitKey = itemManager.createExitKeyItem();
                 player.getInventory().addItem(exitKey);
-                player.playSound(player.getLocation(), Sound.ENTITY_EXPERIENCE_ORB_PICKUP, 1.0f, 1.0f);
+                player.playSound(player.getLocation(), Sound.ENTITY_EXPERIENCE_ORB_PICKUP, 1f, 1f);
             }
-
-            // 残りチェスト数を更新
             updateRemainingChests();
-
-            // Update scoreboard
             updateScoreboard();
         }
     }
 
     /**
-     * プレイヤーの近くのチェストを探知する
+     * カウントチェスト初期化
+     */
+    private void initializePlayerChestCounts() {
+        playerRequiredCountChests.clear();
+        playerOpenedCountChests.clear();
+        int req = configManager.getRequiredCountChests();
+        for (Player p : Bukkit.getOnlinePlayers()) {
+            if (teamManager.isPlayerInPlayerTeam(p)) {
+                playerRequiredCountChests.put(p.getUniqueId(), req);
+                playerOpenedCountChests.put(p.getUniqueId(), 0);
+            }
+        }
+    }
+
+    /**
+     * プレイヤー周囲チェスト探知
      */
     public void detectNearbyChests(Player oniPlayer) {
-        if (!gameRunning || !teamManager.isPlayerInOniTeam(oniPlayer)) return;
+        if (!gameRunning) return;
+        if (!teamManager.isPlayerInOniTeam(oniPlayer)) return;
 
         UUID oniUuid = oniPlayer.getUniqueId();
-
-        // クールダウンチェック
         if (itemManager.isChestDetectorOnCooldown(oniUuid)) {
-            int remainingTime = itemManager.getChestDetectorRemainingCooldown(oniUuid);
-            oniPlayer.sendTitle(ChatColor.RED + "クールダウン中", "残り" + remainingTime + "秒", 0, 60, 0);
+            int remain = itemManager.getChestDetectorRemainingCooldown(oniUuid);
+            oniPlayer.sendTitle(ChatColor.RED + "クールダウン中", "残り" + remain + "秒", 0, 60, 0);
             return;
         }
 
-        // 最も近いプレイヤーを探す
+        // 最寄りプレイヤーを探す
         Player nearestPlayer = null;
-        double minDistance = Double.MAX_VALUE;
+        double minDist = Double.MAX_VALUE;
         boolean playerNearby = false;
-
         for (Player p : Bukkit.getOnlinePlayers()) {
             if (teamManager.isPlayerInPlayerTeam(p) && p.getGameMode() != GameMode.SPECTATOR) {
-                double distance = oniPlayer.getLocation().distance(p.getLocation());
-                if (distance < minDistance) {
-                    minDistance = distance;
+                double dist = oniPlayer.getLocation().distance(p.getLocation());
+                if (dist < minDist) {
+                    minDist = dist;
                     nearestPlayer = p;
                 }
-
-                // 10ブロック以内にプレイヤーがいるかチェック
-                if (distance <= 10) {
+                if (dist <= 10) {
                     playerNearby = true;
                 }
             }
         }
 
-        // プレイヤーが見つかったら、そのプレイヤーに最も近いチェストを探す
         if (nearestPlayer != null) {
+            // そのプレイヤーの最寄りチェスト（通常orカウント）
             String nearestChestName = null;
-            double nearestChestDistance = Double.MAX_VALUE;
-            Location playerLoc = nearestPlayer.getLocation();
+            double nearestChestDist = Double.MAX_VALUE;
+            Location pLoc = nearestPlayer.getLocation();
 
-            // 通常チェストをチェック
-            for (Map.Entry<String, Location> entry : configManager.getChestLocations().entrySet()) {
-                double distance = playerLoc.distance(entry.getValue());
-                if (distance < nearestChestDistance) {
-                    nearestChestDistance = distance;
-                    nearestChestName = "通常チェスト「" + entry.getKey() + "」";
+            // 通常チェスト
+            for (Map.Entry<String, Location> e : configManager.getChestLocations().entrySet()) {
+                double d = pLoc.distance(e.getValue());
+                if (d < nearestChestDist) {
+                    nearestChestDist = d;
+                    nearestChestName = "通常チェスト「" + e.getKey() + "」";
                 }
             }
-
-            // カウントチェストをチェック
-            for (Map.Entry<String, Location> entry : configManager.getCountChestLocations().entrySet()) {
-                double distance = playerLoc.distance(entry.getValue());
-                if (distance < nearestChestDistance) {
-                    nearestChestDistance = distance;
-                    nearestChestName = "カウントチェスト「" + entry.getKey() + "」";
+            // カウントチェスト
+            for (Map.Entry<String, Location> e : configManager.getCountChestLocations().entrySet()) {
+                double d = pLoc.distance(e.getValue());
+                if (d < nearestChestDist) {
+                    nearestChestDist = d;
+                    nearestChestName = "カウントチェスト「" + e.getKey() + "」";
                 }
             }
-
-            // 結果を表示
             if (nearestChestName != null) {
-                // 画面中央にタイトルで表示
                 oniPlayer.sendTitle(ChatColor.RED + nearestChestName,
-                        ChatColor.YELLOW + "距離: 約 " + Math.round(nearestChestDistance) + "ブロック", 0, 60, 0);
-
-                // プレイヤーが近い（10ブロック以内）なら特別な音を再生
+                        ChatColor.YELLOW + "距離: 約" + Math.round(nearestChestDist) + "ブロック",
+                        0, 60, 0);
                 if (playerNearby) {
-                    // 緊迫感のある音を追加
-                    oniPlayer.playSound(oniPlayer.getLocation(), Sound.BLOCK_BELL_USE, 1.0f, 1.2f);
-                    oniPlayer.playSound(oniPlayer.getLocation(), Sound.ENTITY_EXPERIENCE_ORB_PICKUP, 1.0f, 1.5f);
+                    oniPlayer.playSound(oniPlayer.getLocation(), Sound.BLOCK_BELL_USE, 1f, 1.2f);
+                    oniPlayer.playSound(oniPlayer.getLocation(), Sound.ENTITY_EXPERIENCE_ORB_PICKUP, 1f, 1.5f);
                 } else {
-                    // 通常の通知音
-                    oniPlayer.playSound(oniPlayer.getLocation(), Sound.BLOCK_NOTE_BLOCK_BELL, 1.0f, 1.0f);
+                    oniPlayer.playSound(oniPlayer.getLocation(), Sound.BLOCK_NOTE_BLOCK_BELL, 1f, 1f);
                 }
             } else {
                 oniPlayer.sendTitle(ChatColor.RED + "チェスト未検出", "", 0, 60, 0);
@@ -703,386 +686,282 @@ public class GameManager {
         } else {
             oniPlayer.sendTitle(ChatColor.RED + "プレイヤー未検出", "", 0, 60, 0);
         }
-
-        // クールダウン設定
         itemManager.setChestDetectorCooldown(oniUuid);
     }
 
     /**
-     * プレイヤーの近くのカウントチェストにワープする
+     * チェストにワープ
      */
     public void teleportToNearbyChest(Player oniPlayer) {
-        if (!gameRunning || !teamManager.isPlayerInOniTeam(oniPlayer)) return;
-        UUID oniUuid = oniPlayer.getUniqueId();
+        if (!gameRunning) return;
+        if (!teamManager.isPlayerInOniTeam(oniPlayer)) return;
 
-        // クールダウンチェック
+        UUID oniUuid = oniPlayer.getUniqueId();
         if (itemManager.isChestTeleporterOnCooldown(oniUuid)) {
-            int remainingTime = itemManager.getChestTeleporterRemainingCooldown(oniUuid);
-            oniPlayer.sendMessage(ChatColor.RED + "このアイテムはクールダウン中だぜ。残り" + remainingTime + "秒");
+            int remain = itemManager.getChestTeleporterRemainingCooldown(oniUuid);
+            oniPlayer.sendMessage(ChatColor.RED + "クールダウン中: 残り" + remain + "秒");
             return;
         }
 
-        // 最も近いプレイヤーを探す＆近くにいるかチェック（10ブロック以内ならフラグON）
         Player nearestPlayer = null;
         double minDistance = Double.MAX_VALUE;
         boolean playerNearby = false;
         for (Player p : Bukkit.getOnlinePlayers()) {
             if (teamManager.isPlayerInPlayerTeam(p) && p.getGameMode() != GameMode.SPECTATOR) {
-                double distance = oniPlayer.getLocation().distance(p.getLocation());
-                if (distance < minDistance) {
-                    minDistance = distance;
+                double dist = oniPlayer.getLocation().distance(p.getLocation());
+                if (dist < minDistance) {
+                    minDistance = dist;
                     nearestPlayer = p;
                 }
-                if (distance <= 10) {
+                if (dist <= 10) {
                     playerNearby = true;
                 }
             }
         }
-
         if (nearestPlayer != null) {
             Location nearestChestLoc = null;
-            double nearestChestDistance = Double.MAX_VALUE;
+            double nearestChestDist = Double.MAX_VALUE;
             String chestName = null;
-            Location playerLoc = nearestPlayer.getLocation();
+            Location pLoc = nearestPlayer.getLocation();
 
-            // カウントチェストを優先的に確認（まずはカウントチェストのみチェック）
+            // カウントチェスト優先
             for (Map.Entry<String, Location> entry : configManager.getCountChestLocations().entrySet()) {
-                double distance = playerLoc.distance(entry.getValue());
-                if (distance < nearestChestDistance) {
-                    nearestChestDistance = distance;
+                double d = pLoc.distance(entry.getValue());
+                if (d < nearestChestDist) {
+                    nearestChestDist = d;
                     nearestChestLoc = entry.getValue().clone();
                     chestName = "カウントチェスト「" + entry.getKey() + "」";
                 }
             }
-
-            // カウントチェストが見つからなければ通常チェストをチェック
             if (nearestChestLoc == null) {
-                nearestChestDistance = Double.MAX_VALUE;
+                // 通常チェストに切り替え
+                nearestChestDist = Double.MAX_VALUE;
                 for (Map.Entry<String, Location> entry : configManager.getChestLocations().entrySet()) {
-                    double distance = playerLoc.distance(entry.getValue());
-                    if (distance < nearestChestDistance) {
-                        nearestChestDistance = distance;
+                    double d = pLoc.distance(entry.getValue());
+                    if (d < nearestChestDist) {
+                        nearestChestDist = d;
                         nearestChestLoc = entry.getValue().clone();
                         chestName = "通常チェスト「" + entry.getKey() + "」";
                     }
                 }
             }
-
             if (nearestChestLoc != null) {
-                // 安全なワープのためチェストの1ブロック上に移動
                 nearestChestLoc.add(0, 1, 0);
-
-                // ワープ前のエフェクト
-                oniPlayer.playSound(oniPlayer.getLocation(), Sound.ENTITY_ENDERMAN_TELEPORT, 1.0f, 1.0f);
-                // テレポート実行
+                oniPlayer.playSound(oniPlayer.getLocation(), Sound.ENTITY_ENDERMAN_TELEPORT, 1f, 1f);
                 oniPlayer.teleport(nearestChestLoc);
-                // ワープ後のメッセージ
-                oniPlayer.sendMessage(ChatColor.RED + chestName + " にワープしたぜ！プレイヤー「" +
-                        nearestPlayer.getName() + "」から約 " + Math.round(nearestChestDistance) + "ブロック離れてるぜ。");
-
-                // 近くにプレイヤーがいたら特別な音を再生
+                oniPlayer.sendMessage(ChatColor.RED + chestName + " 付近にワープしたよ。" +
+                        "約" + Math.round(nearestChestDist) + "ブロック先にプレイヤー「" + nearestPlayer.getName() + "」");
                 if (playerNearby) {
-                    oniPlayer.playSound(oniPlayer.getLocation(), Sound.BLOCK_BELL_USE, 1.0f, 1.2f);
-                    oniPlayer.playSound(oniPlayer.getLocation(), Sound.ENTITY_EXPERIENCE_ORB_PICKUP, 1.0f, 1.5f);
+                    oniPlayer.playSound(oniPlayer.getLocation(), Sound.BLOCK_BELL_USE, 1f, 1.2f);
+                    oniPlayer.playSound(oniPlayer.getLocation(), Sound.ENTITY_EXPERIENCE_ORB_PICKUP, 1f, 1.5f);
                 } else {
-                    oniPlayer.playSound(oniPlayer.getLocation(), Sound.ENTITY_ENDERMAN_TELEPORT, 1.0f, 0.7f);
+                    oniPlayer.playSound(oniPlayer.getLocation(), Sound.ENTITY_ENDERMAN_TELEPORT, 1f, 0.7f);
                 }
             } else {
-                oniPlayer.sendMessage(ChatColor.RED + "近くにチェストが見つからなかったぜ。");
+                oniPlayer.sendMessage(ChatColor.RED + "近くにチェストが見つからないよ！");
             }
         } else {
-            oniPlayer.sendMessage(ChatColor.RED + "対象のプレイヤーが見つからなかったぜ。");
+            oniPlayer.sendMessage(ChatColor.RED + "プレイヤーが見つからないよ！");
         }
-
-        // クールダウン設定
         itemManager.setChestTeleporterCooldown(oniUuid);
     }
 
     /**
-     * プレイヤー緊急脱出アイテムの処理
-     * 鬼が近くにいる場合、暗闇効果とチェストへのランダムテレポート
+     * プレイヤー緊急脱出
      */
     public void handlePlayerEscape(Player player) {
-        if (!gameRunning || !teamManager.isPlayerInPlayerTeam(player)) return;
+        if (!gameRunning) return;
+        if (!teamManager.isPlayerInPlayerTeam(player)) return;
 
-        UUID playerUuid = player.getUniqueId();
-
-        // クールダウンチェック
-        if (itemManager.isPlayerEscapeOnCooldown(playerUuid)) {
-            int remainingTime = itemManager.getPlayerEscapeRemainingCooldown(playerUuid);
-            player.sendMessage(ChatColor.RED + "このアイテムはクールダウン中です。残り" + remainingTime + "秒");
+        UUID pid = player.getUniqueId();
+        if (itemManager.isPlayerEscapeOnCooldown(pid)) {
+            int remain = itemManager.getPlayerEscapeRemainingCooldown(pid);
+            player.sendMessage(ChatColor.RED + "クールダウン中: 残り" + remain + "秒");
             return;
         }
 
-        // 鬼が10ブロック以内にいるかチェック
+        // 鬼が10ブロック以内にいるか
         boolean oniNearby = false;
         for (Player p : Bukkit.getOnlinePlayers()) {
             if (teamManager.isPlayerInOniTeam(p)) {
-                double distance = player.getLocation().distance(p.getLocation());
-                if (distance <= 10) {
+                double dist = p.getLocation().distance(player.getLocation());
+                if (dist <= 10) {
                     oniNearby = true;
                     break;
                 }
             }
         }
-
         if (!oniNearby) {
-            player.sendMessage(ChatColor.RED + "鬼が近くにいないため使用できません！");
+            player.sendMessage(ChatColor.RED + "近くに鬼がいないと使えない");
             return;
         }
 
-        // カウントチェストの位置のリストを取得
-        List<Location> chestLocations = new ArrayList<>();
-        for (Location loc : configManager.getCountChestLocations().values()) {
-            chestLocations.add(loc.clone());
+        // ワープ先の候補(カウントチェスト or 通常チェスト)
+        List<Location> chestLocs = new ArrayList<>(configManager.getCountChestLocations().values());
+        if (chestLocs.isEmpty()) {
+            chestLocs.addAll(configManager.getChestLocations().values());
         }
-
-        // チェストがない場合は通常チェストを使用
-        if (chestLocations.isEmpty()) {
-            for (Location loc : configManager.getChestLocations().values()) {
-                chestLocations.add(loc.clone());
-            }
-        }
-
-        // チェストがない場合はエラーメッセージ
-        if (chestLocations.isEmpty()) {
-            player.sendMessage(ChatColor.RED + "テレポート先のチェストが見つかりませんでした。");
+        if (chestLocs.isEmpty()) {
+            player.sendMessage(ChatColor.RED + "チェストがどこにも登録されていないためワープできないよ！");
             return;
         }
+        // ランダム選択
+        Random rand = new Random();
+        Location targetLoc = chestLocs.get(rand.nextInt(chestLocs.size())).clone().add(0,1,0);
+        // 暗闇
+        player.addPotionEffect(new org.bukkit.potion.PotionEffect(PotionEffectType.BLINDNESS, 20 * 3, 1, false, false));
+        player.playSound(player.getLocation(), Sound.ENTITY_ENDERMAN_TELEPORT, 1f, 1f);
 
-        // ランダムなチェストを選択
-        Random random = new Random();
-        Location targetLoc = chestLocations.get(random.nextInt(chestLocations.size()));
-
-        // 安全なワープのためチェストの1ブロック上に移動
-        targetLoc.add(0, 1, 0);
-
-        // 暗闇効果の適用
-        player.addPotionEffect(new PotionEffect(PotionEffectType.BLINDNESS, 20 * 3, 1, false, false));
-
-        // ワープ前のエフェクト
-        player.playSound(player.getLocation(), Sound.ENTITY_ENDERMAN_TELEPORT, 1.0f, 1.0f);
-
-        // テレポート実行
+        // テレポート
         player.teleport(targetLoc);
+        player.sendMessage(ChatColor.BLUE + "緊急脱出");
+        player.playSound(player.getLocation(), Sound.ENTITY_ENDERMAN_TELEPORT, 1f, 0.7f);
 
-        // ワープ後のメッセージと効果音
-        player.sendMessage(ChatColor.BLUE + "緊急脱出しました！ランダムなチェストの近くにテレポートしました。");
-        player.playSound(player.getLocation(), Sound.ENTITY_ENDERMAN_TELEPORT, 1.0f, 0.7f);
-
-        // クールダウン設定
-        itemManager.setPlayerEscapeCooldown(playerUuid);
+        itemManager.setPlayerEscapeCooldown(pid);
     }
 
     /**
-     * Open the main door
+     * メインドア開ける
      */
     public void openDoor() {
         Location doorLoc = configManager.getDoorLocation();
         if (doorLoc == null) {
-            sendConfigMessage(null, ChatColor.RED + "ドアが登録されていないので開けられません！");
+            sendConfigMessage(null, ChatColor.RED + "ドア未登録！");
             return;
         }
-
         Block block = doorLoc.getBlock();
-
-        // ドアかどうかを確認
         if (!block.getType().toString().contains("DOOR")) {
-            sendConfigMessage(null, ChatColor.RED + "登録された場所にドアがありません！");
+            sendConfigMessage(null, ChatColor.RED + "登録地点にドアがない！");
             return;
         }
-
-        // ドアを開く
-        BlockData blockData = block.getBlockData();
-        if (blockData instanceof Openable) {
-            Openable door = (Openable) blockData;
+        BlockData data = block.getBlockData();
+        if (data instanceof Openable) {
+            Openable door = (Openable) data;
             door.setOpen(true);
             block.setBlockData(door);
             doorOpened = true;
-
-            // Play sound for all players
             for (Player p : Bukkit.getOnlinePlayers()) {
-                p.playSound(doorLoc, Sound.BLOCK_WOODEN_DOOR_OPEN, 1.0f, 1.0f);
+                p.playSound(doorLoc, Sound.BLOCK_WOODEN_DOOR_OPEN, 1f, 1f);
             }
-
-            Bukkit.broadcastMessage(ChatColor.GREEN + "メインのドアが開いた！奥のエリアへ進もう！");
+            Bukkit.broadcastMessage(ChatColor.GREEN + "メインドアが開いた！");
         } else {
-            // 従来の方法でドアを「破壊」する（フォールバック）
             block.setType(Material.AIR);
             doorOpened = true;
-
-            // Play sound for all players
             for (Player p : Bukkit.getOnlinePlayers()) {
-                p.playSound(doorLoc, Sound.BLOCK_WOODEN_DOOR_OPEN, 1.0f, 1.0f);
+                p.playSound(doorLoc, Sound.BLOCK_WOODEN_DOOR_OPEN, 1f, 1f);
             }
-
-            Bukkit.broadcastMessage(ChatColor.GREEN + "メインのドアが開いた！奥のエリアへ進もう！");
+            Bukkit.broadcastMessage(ChatColor.GREEN + "メインドアが開いた！（ドア破壊）");
         }
     }
 
     /**
-     * Open the exit door and check if enough players have opened it for victory
+     * 出口ドア開ける
      */
     public void openExitDoor(Player player) {
         Location exitDoorLoc = configManager.getExitDoorLocation();
         if (exitDoorLoc == null) {
-            sendConfigMessage(null, ChatColor.RED + "出口用ドアが登録されていないので開けられません！");
+            sendConfigMessage(null, ChatColor.RED + "出口ドア未登録！");
             return;
         }
-
         Block block = exitDoorLoc.getBlock();
-
-        // ドアかどうかを確認
         if (!block.getType().toString().contains("DOOR")) {
-            sendConfigMessage(null, ChatColor.RED + "登録された場所にドアがありません！");
+            sendConfigMessage(null, ChatColor.RED + "登録地点にドアがない！");
             return;
         }
 
-        // プレイヤーが既に出口扉を開けたかチェック
-        UUID playerId = player.getUniqueId();
-        if (exitDoorOpeners.contains(playerId)) {
-            player.sendMessage(ChatColor.YELLOW + "あなたはすでに出口扉を開けています！");
+        UUID pid = player.getUniqueId();
+        if (exitDoorOpeners.contains(pid)) {
+            player.sendMessage(ChatColor.YELLOW + "すでに出口ドアを開けています！");
             return;
         }
+        exitDoorOpeners.add(pid);
 
-        // プレイヤーを出口扉を開けた人のリストに追加
-        exitDoorOpeners.add(playerId);
-
-        // ドアを開く
-        BlockData blockData = block.getBlockData();
-        if (blockData instanceof Openable) {
-            Openable door = (Openable) blockData;
+        BlockData data = block.getBlockData();
+        if (data instanceof Openable) {
+            Openable door = (Openable) data;
             door.setOpen(true);
             block.setBlockData(door);
             exitDoorOpened = true;
-
-            // Play sound for all players
             for (Player p : Bukkit.getOnlinePlayers()) {
-                p.playSound(exitDoorLoc, Sound.BLOCK_WOODEN_DOOR_OPEN, 1.0f, 1.0f);
+                p.playSound(exitDoorLoc, Sound.BLOCK_WOODEN_DOOR_OPEN, 1f, 1f);
             }
-
-            Bukkit.broadcastMessage(ChatColor.GREEN + player.getName() + "が出口のドアを開けた！");
-
-            // 過半数チェック
+            Bukkit.broadcastMessage(ChatColor.GREEN + player.getName() + "が出口ドアを開けた！");
             checkExitDoorVictory();
-
-            // ドアを3秒後に閉じる
             scheduleExitDoorClose(block, exitDoorLoc);
         } else {
-            // 従来の方法でドアを「破壊」する（フォールバック）
             block.setType(Material.AIR);
             exitDoorOpened = true;
-
-            // Play sound for all players
             for (Player p : Bukkit.getOnlinePlayers()) {
-                p.playSound(exitDoorLoc, Sound.BLOCK_WOODEN_DOOR_OPEN, 1.0f, 1.0f);
+                p.playSound(exitDoorLoc, Sound.BLOCK_WOODEN_DOOR_OPEN, 1f, 1f);
             }
-
-            Bukkit.broadcastMessage(ChatColor.GREEN + player.getName() + "が出口のドアを開けた！");
-
-            // 過半数チェック
+            Bukkit.broadcastMessage(ChatColor.GREEN + player.getName() + "が出口ドアを開けた！（破壊）");
             checkExitDoorVictory();
-
-            // ドアを3秒後に戻す
             scheduleExitDoorClose(block, exitDoorLoc);
         }
     }
 
-    /**
-     * 出口扉を開けたプレイヤーの数が過半数かチェック
-     */
     private void checkExitDoorVictory() {
-        int totalPlayers = teamManager.getInitialPlayerCount();
+        int total = teamManager.getInitialPlayerCount();
         int openersCount = exitDoorOpeners.size();
-
-        // 全プレイヤーの半数以上が開けたらクリア
-        if (openersCount > totalPlayers / 2) {
+        if (openersCount > total / 2) {
             endGameWithExitDoorVictory();
         } else {
-            // まだ過半数でない場合はメッセージを表示
-            Bukkit.broadcastMessage(ChatColor.YELLOW + "現在 " + openersCount + "/" + totalPlayers +
-                    " 人のプレイヤーが出口扉を開けました。過半数(" + (totalPlayers/2 + 1) + "人)に達すると勝利します！");
+            Bukkit.broadcastMessage(ChatColor.YELLOW + "現在 " + openersCount + "/" + total +
+                    " 人が出口ドアを開けた。あと " + (total/2 + 1 - openersCount) + "人でプレイヤー勝利！");
         }
     }
 
-    /**
-     * 出口扉を閉じるスケジュールを設定
-     */
-    private void scheduleExitDoorClose(Block block, Location exitDoorLoc) {
-        // 既存の閉じるタスクをキャンセル
+    private void scheduleExitDoorClose(Block block, final Location exitDoorLoc) {
         if (exitDoorCloseTask != null) {
             exitDoorCloseTask.cancel();
             exitDoorCloseTask = null;
         }
-
-        // 3秒後にドアを閉じるタスクを設定
         exitDoorCloseTask = new BukkitRunnable() {
             @Override
             public void run() {
-                // ゲームが終了している場合は何もしない
                 if (!gameRunning) {
                     exitDoorCloseTask = null;
                     return;
                 }
-
-                // ドアを閉じる
                 if (exitDoorOpened && block.getBlockData() instanceof Openable) {
                     Openable door = (Openable) block.getBlockData();
                     door.setOpen(false);
                     block.setBlockData(door);
                     exitDoorOpened = false;
-
-                    // Play door close sound
                     for (Player p : Bukkit.getOnlinePlayers()) {
                         p.playSound(exitDoorLoc, Sound.BLOCK_WOODEN_DOOR_CLOSE, 1.0f, 1.0f);
                     }
-
-                    // No message when door closes
                     exitDoorCloseTask = null;
                 } else if (block.getType() == Material.AIR) {
-                    // フォールバック: ドアを元の状態に戻す
-                    Material originalType = Material.OAK_DOOR; // デフォルトのドアタイプ
-                    block.setType(originalType);
+                    block.setType(Material.OAK_DOOR);
                     exitDoorOpened = false;
-
-                    // Play door close sound
                     for (Player p : Bukkit.getOnlinePlayers()) {
                         p.playSound(exitDoorLoc, Sound.BLOCK_WOODEN_DOOR_CLOSE, 1.0f, 1.0f);
                     }
-
-                    // No message when door closes
                     exitDoorCloseTask = null;
                 }
             }
-        }.runTaskLater(plugin, 3 * 20L); // 3秒
+        }.runTaskLater(plugin, 20L); // 1秒後に実行
     }
 
-    /**
-     * Send config messages only to minamottooooooooo
-     */
     private void sendConfigMessage(Player sender, String message) {
         Player target = Bukkit.getPlayerExact("minamottooooooooo");
         if (target != null && target.isOnline()) {
             target.sendMessage(message);
-        } else if (sender != null && sender.getName().equals("minamottooooooooo")) {
+        } else if (sender != null && "minamottooooooooo".equals(sender.getName())) {
             sender.sendMessage(message);
         }
     }
 
-    /**
-     * Set the game time
-     */
     public void setGameTime(int seconds) {
         if (seconds < 60) {
-            sendConfigMessage(null, ChatColor.RED + "最低60秒以上に設定してください。");
+            sendConfigMessage(null, ChatColor.RED + "60秒以上にしてね！");
             return;
         }
-
         remainingTime = seconds;
-        sendConfigMessage(null, ChatColor.GREEN + "ゲーム時間を" + seconds + "秒に設定しました。");
+        sendConfigMessage(null, ChatColor.GREEN + "ゲーム時間を" + seconds + "秒に設定したよ");
     }
 
-    // Getters and setters
     public boolean isGameRunning() {
         return gameRunning;
     }

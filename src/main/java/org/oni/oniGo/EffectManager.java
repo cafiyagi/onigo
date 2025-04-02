@@ -8,10 +8,7 @@ import org.bukkit.potion.PotionEffectType;
 import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.scheduler.BukkitTask;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.UUID;
+import java.util.*;
 
 public class EffectManager {
     private final OniGo plugin;
@@ -26,11 +23,11 @@ public class EffectManager {
     public static final String ONISONG1_SOUND = "minecraft:onisong1";
     public static final String ONISONG2_SOUND = "minecraft:onisong2";
 
-    // Kakure Dama (hiding orb) effect tracking
+    // Kakure Dama (隠れ玉)
     private Map<UUID, Integer> kakureDamaRemaining = new HashMap<>();
     private Map<UUID, BukkitTask> kakureDamaTask = new HashMap<>();
 
-    // Oni slowness effect task
+    // 鬼用スロウタスク
     private BukkitTask oniSlownessTask;
 
     public EffectManager(OniGo plugin, TeamManager teamManager) {
@@ -39,23 +36,23 @@ public class EffectManager {
     }
 
     /**
-     * Start the Yasha (demon) effect
+     * 夜叉化
      */
     public void startYashaEffect(Player player) {
         activeYashaPlayer = player;
 
-        // If this is during a game, move player to oni team
+        // ゲーム中なら鬼チームへ移動
         if (plugin.isGameRunning() && teamManager.isPlayerInPlayerTeam(player)) {
             teamManager.movePlayerToOniTeam(player);
-            player.sendMessage(ChatColor.RED + "夜叉になったから、鬼陣営に移ったよ！");
+            player.sendMessage(ChatColor.RED + "夜叉化されたので鬼チームへ移動！");
         }
 
-        // Play sound to all players
+        // 全員に音を再生
         for (Player p : player.getWorld().getPlayers()) {
             p.playSound(p.getLocation(), ONISONG1_SOUND, 1.0f, 1.0f);
         }
 
-        // Start darkness effect
+        // 闇効果フェードイン
         currentDarkness = 0;
         fadeTask = new BukkitRunnable() {
             @Override
@@ -64,10 +61,8 @@ public class EffectManager {
                     currentDarkness++;
                 }
                 for (Player p : player.getWorld().getPlayers()) {
-                    // Don't apply darkness to oni team
-                    if (teamManager.isPlayerInOniTeam(p)) {
-                        continue;
-                    }
+                    // 鬼チームには暗闇を与えない
+                    if (teamManager.isPlayerInOniTeam(p)) continue;
                     p.addPotionEffect(new PotionEffect(PotionEffectType.DARKNESS, 70, currentDarkness, false, false));
                     p.playSound(activeYashaPlayer.getLocation(), ONISONG2_SOUND, 1.0f, 1.0f);
                 }
@@ -76,104 +71,82 @@ public class EffectManager {
     }
 
     /**
-     * Stop the Yasha (demon) effect
+     * 夜叉効果終了
      */
     public void stopYashaEffect() {
-        // Cancel old tasks
         if (fadeTask != null) {
             fadeTask.cancel();
             fadeTask = null;
         }
-
         if (reverseFadeTask != null) {
             reverseFadeTask.cancel();
             reverseFadeTask = null;
         }
-
-        // Start reverse fade (removing darkness gradually)
+        // 徐々に闇効果解除
         reverseFadeTask = new BukkitRunnable() {
             @Override
             public void run() {
                 if (currentDarkness > 0) {
                     currentDarkness--;
                     for (Player p : Bukkit.getOnlinePlayers()) {
-                        if (p != null && p.isOnline()) {
-                            // Don't affect oni team
-                            if (teamManager.isPlayerInOniTeam(p)) {
-                                continue;
-                            }
-                            p.addPotionEffect(new PotionEffect(PotionEffectType.DARKNESS, 70, currentDarkness, false, false));
-                        }
+                        if (teamManager.isPlayerInOniTeam(p)) continue;
+                        p.addPotionEffect(new PotionEffect(PotionEffectType.DARKNESS, 70, currentDarkness, false, false));
                     }
                 } else {
                     for (Player p : Bukkit.getOnlinePlayers()) {
-                        if (p != null && p.isOnline()) {
-                            // Don't affect oni team
-                            if (teamManager.isPlayerInOniTeam(p)) {
-                                continue;
-                            }
-                            p.removePotionEffect(PotionEffectType.DARKNESS);
-                            p.stopSound(ONISONG1_SOUND);
-                            p.stopSound(ONISONG2_SOUND);
-                        }
+                        if (teamManager.isPlayerInOniTeam(p)) continue;
+                        p.removePotionEffect(PotionEffectType.DARKNESS);
+                        p.stopSound(ONISONG1_SOUND);
+                        p.stopSound(ONISONG2_SOUND);
                     }
-                    // Cancel task and clean up
-                    BukkitTask taskToCancel = reverseFadeTask;
+                    cancel();
                     reverseFadeTask = null;
-                    if (taskToCancel != null) {
-                        taskToCancel.cancel();
-                    }
                 }
             }
         }.runTaskTimer(plugin, 0L, 60L);
-
         activeYashaPlayer = null;
     }
 
     /**
-     * Start the kakure dama (hiding orb) effect - invisibility
+     * 隠れ玉スタート
      */
     public void startKakureDamaEffect(Player player) {
         int remainingTime = kakureDamaRemaining.getOrDefault(player.getUniqueId(), 0);
         if (remainingTime <= 0) {
-            player.sendMessage(ChatColor.RED + "隠れ玉の使用時間がなくなったよ！");
+            player.sendMessage(ChatColor.RED + "隠れ玉の使用時間が残ってないよ！");
             return;
         }
-
-        // Apply invisibility and slowness
+        // 透明化＆スロー
         player.addPotionEffect(new PotionEffect(PotionEffectType.INVISIBILITY, 999999, 0, false, false));
         player.addPotionEffect(new PotionEffect(PotionEffectType.SLOWNESS, 999999, 1, false, false));
-        player.sendMessage(ChatColor.AQUA + "透明化したよ！残り " + remainingTime + "秒");
+        player.sendMessage(ChatColor.AQUA + "隠れ玉発動！残り" + remainingTime + "秒");
 
-        // Start countdown timer
         BukkitTask task = new BukkitRunnable() {
             int timeLeft = remainingTime;
             @Override
             public void run() {
                 timeLeft--;
                 kakureDamaRemaining.put(player.getUniqueId(), timeLeft);
-                plugin.updateScoreboard(); // Update timer on scoreboard
+                plugin.getGameManager().updateScoreboard(); // スコアボード更新
 
                 if (timeLeft <= 0) {
                     stopKakureDamaEffect(player);
-                    player.sendMessage(ChatColor.RED + "隠れ玉の効果が切れたよ！");
+                    player.sendMessage(ChatColor.RED + "隠れ玉が切れたよ！");
                     this.cancel();
                     kakureDamaTask.remove(player.getUniqueId());
                 }
             }
         }.runTaskTimer(plugin, 20L, 20L);
-
         kakureDamaTask.put(player.getUniqueId(), task);
     }
 
     /**
-     * Stop the kakure dama (hiding orb) effect
+     * 隠れ玉停止
      */
     public void stopKakureDamaEffect(Player player) {
         player.removePotionEffect(PotionEffectType.INVISIBILITY);
         player.removePotionEffect(PotionEffectType.SLOWNESS);
 
-        // Cancel task if exists
         if (kakureDamaTask.containsKey(player.getUniqueId())) {
             kakureDamaTask.get(player.getUniqueId()).cancel();
             kakureDamaTask.remove(player.getUniqueId());
@@ -181,78 +154,52 @@ public class EffectManager {
     }
 
     /**
-     * Start slowness effect for oni team members
+     * 鬼スロウ
      */
     public void startOniSlownessTask() {
         if (oniSlownessTask != null) {
             oniSlownessTask.cancel();
         }
-
         oniSlownessTask = new BukkitRunnable() {
             @Override
             public void run() {
                 if (!plugin.isGameRunning()) return;
-
                 for (Player p : Bukkit.getOnlinePlayers()) {
                     if (teamManager.isPlayerInOniTeam(p)) {
-                        // Apply slowness II (level 2) effect
                         if (!p.hasPotionEffect(PotionEffectType.SLOWNESS)) {
-                            p.addPotionEffect(new PotionEffect(
-                                    PotionEffectType.SLOWNESS,
-                                    999999,
-                                    2, // Level 2 slowness
-                                    false, false
-                            ));
+                            p.addPotionEffect(new PotionEffect(PotionEffectType.SLOWNESS, 999999, 2, false, false));
                         }
                     }
                 }
             }
-        }.runTaskTimer(plugin, 0L, 20L); // Check every second
+        }.runTaskTimer(plugin, 0L, 20L);
     }
 
     /**
-     * Clear all effects for all players
+     * 全エフェクト解除
      */
     public void clearAllEffects() {
-        // Cancel all tasks
-        if (fadeTask != null) {
-            fadeTask.cancel();
-            fadeTask = null;
-        }
-
-        if (reverseFadeTask != null) {
-            reverseFadeTask.cancel();
-            reverseFadeTask = null;
-        }
-
+        if (fadeTask != null) fadeTask.cancel();
+        fadeTask = null;
+        if (reverseFadeTask != null) reverseFadeTask.cancel();
+        reverseFadeTask = null;
         if (oniSlownessTask != null) {
             oniSlownessTask.cancel();
             oniSlownessTask = null;
         }
-
-        // Cancel kakure dama tasks
-        for (UUID uuid : new ArrayList<>(kakureDamaTask.keySet())) {
-            BukkitTask task = kakureDamaTask.get(uuid);
-            if (task != null) {
-                task.cancel();
-            }
+        for (BukkitTask task : new ArrayList<>(kakureDamaTask.values())) {
+            task.cancel();
         }
         kakureDamaTask.clear();
 
-        // Remove effects from all players
         for (Player p : Bukkit.getOnlinePlayers()) {
-            if (p != null && p.isOnline()) {
-                clearAllPotionEffects(p);
-                p.stopSound(ONISONG1_SOUND);
-                p.stopSound(ONISONG2_SOUND);
-                p.setFoodLevel(20); // Reset food level
-            }
+            clearAllPotionEffects(p);
+            p.stopSound(ONISONG1_SOUND);
+            p.stopSound(ONISONG2_SOUND);
+            p.setFoodLevel(20);
         }
     }
 
-    /**
-     * Clear all potion effects from a player
-     */
     public void clearAllPotionEffects(Player player) {
         for (PotionEffect effect : player.getActivePotionEffects()) {
             player.removePotionEffect(effect.getType());
@@ -260,7 +207,7 @@ public class EffectManager {
     }
 
     /**
-     * Initialize kakure dama timers for all players
+     * 隠れ玉初期化
      */
     public void initializeKakureDama(int initialTime) {
         kakureDamaRemaining.clear();
@@ -271,7 +218,6 @@ public class EffectManager {
         }
     }
 
-    // Getters and setters
     public Map<UUID, Integer> getKakureDamaRemaining() {
         return kakureDamaRemaining;
     }

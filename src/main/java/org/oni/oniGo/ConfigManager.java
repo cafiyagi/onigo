@@ -12,33 +12,28 @@ public class ConfigManager {
     private Map<String, Location> chestLocations = new HashMap<>();
     private Map<String, Boolean> chestOpened = new HashMap<>();
 
-    // チェストカウント用チェスト
+    // カウントチェスト
     private Map<String, Location> countChestLocations = new HashMap<>();
     private Map<String, Boolean> countChestOpened = new HashMap<>();
 
-    private Location doorLocation;
-    // 出口専用扉
-    private Location exitDoorLocation;
+    private Location doorLocation;       // メインドア
+    private Location exitDoorLocation;   // 出口ドア
     private Location escapeLocation;
     private Location initialSpawnLocation;
 
-    // 必要なチェストカウント数（一人あたり）
-    private int requiredCountChests = 3;
+    private int requiredCountChests = 3; // 1人あたり必要カウントチェスト数
 
     public ConfigManager(OniGo plugin) {
         this.plugin = plugin;
-        // Initialize default locations
+        // デフォルト設定
         escapeLocation = new Location(Bukkit.getWorlds().get(0), 104, -6, -36);
         initialSpawnLocation = new Location(Bukkit.getWorlds().get(0), 6, 18, -28);
     }
 
-    /**
-     * Load chest and door locations from config
-     */
     public void loadConfig() {
         FileConfiguration config = plugin.getConfig();
 
-        // Load regular chest locations
+        // 通常チェスト
         if (config.isConfigurationSection("chests")) {
             for (String chestName : config.getConfigurationSection("chests").getKeys(false)) {
                 double x = config.getDouble("chests." + chestName + ".x");
@@ -47,11 +42,11 @@ public class ConfigManager {
                 String worldName = config.getString("chests." + chestName + ".world");
                 Location loc = new Location(Bukkit.getWorld(worldName), x, y, z);
                 chestLocations.put(chestName, loc);
-                chestOpened.put(chestName, false); // Initialize as unopened
+                chestOpened.put(chestName, false);
             }
         }
 
-        // Load count chest locations
+        // カウントチェスト
         if (config.isConfigurationSection("count_chests")) {
             for (String chestName : config.getConfigurationSection("count_chests").getKeys(false)) {
                 double x = config.getDouble("count_chests." + chestName + ".x");
@@ -60,16 +55,16 @@ public class ConfigManager {
                 String worldName = config.getString("count_chests." + chestName + ".world");
                 Location loc = new Location(Bukkit.getWorld(worldName), x, y, z);
                 countChestLocations.put(chestName, loc);
-                countChestOpened.put(chestName, false); // Initialize as unopened
+                countChestOpened.put(chestName, false);
             }
         }
 
-        // Load required count chest number
+        // 必要カウントチェスト数
         if (config.contains("required_count_chests")) {
             requiredCountChests = config.getInt("required_count_chests", 3);
         }
 
-        // Load door location
+        // door
         if (config.isConfigurationSection("door")) {
             double x = config.getDouble("door.x");
             double y = config.getDouble("door.y");
@@ -78,7 +73,7 @@ public class ConfigManager {
             doorLocation = new Location(Bukkit.getWorld(worldName), x, y, z);
         }
 
-        // Load exit door location
+        // exit door
         if (config.isConfigurationSection("exit_door")) {
             double x = config.getDouble("exit_door.x");
             double y = config.getDouble("exit_door.y");
@@ -87,7 +82,7 @@ public class ConfigManager {
             exitDoorLocation = new Location(Bukkit.getWorld(worldName), x, y, z);
         }
 
-        // Load escape location if exists
+        // escape
         if (config.isConfigurationSection("escape")) {
             double x = config.getDouble("escape.x");
             double y = config.getDouble("escape.y");
@@ -96,7 +91,7 @@ public class ConfigManager {
             escapeLocation = new Location(Bukkit.getWorld(worldName), x, y, z);
         }
 
-        // Load initial spawn if exists
+        // initial spawn
         if (config.isConfigurationSection("initial_spawn")) {
             double x = config.getDouble("initial_spawn.x");
             double y = config.getDouble("initial_spawn.y");
@@ -106,13 +101,9 @@ public class ConfigManager {
         }
     }
 
-    /**
-     * Save chest and door locations to config
-     */
     public void saveConfig() {
         FileConfiguration config = plugin.getConfig();
-
-        // Clear and save regular chest locations
+        // clear and re-set
         config.set("chests", null);
         for (Map.Entry<String, Location> entry : chestLocations.entrySet()) {
             String chestName = entry.getKey();
@@ -123,7 +114,6 @@ public class ConfigManager {
             config.set("chests." + chestName + ".world", loc.getWorld().getName());
         }
 
-        // Clear and save count chest locations
         config.set("count_chests", null);
         for (Map.Entry<String, Location> entry : countChestLocations.entrySet()) {
             String chestName = entry.getKey();
@@ -134,10 +124,8 @@ public class ConfigManager {
             config.set("count_chests." + chestName + ".world", loc.getWorld().getName());
         }
 
-        // Save required count chest number (per player)
         config.set("required_count_chests", requiredCountChests);
 
-        // Save door location
         if (doorLocation != null) {
             config.set("door.x", doorLocation.getX());
             config.set("door.y", doorLocation.getY());
@@ -145,7 +133,6 @@ public class ConfigManager {
             config.set("door.world", doorLocation.getWorld().getName());
         }
 
-        // Save exit door location
         if (exitDoorLocation != null) {
             config.set("exit_door.x", exitDoorLocation.getX());
             config.set("exit_door.y", exitDoorLocation.getY());
@@ -153,13 +140,11 @@ public class ConfigManager {
             config.set("exit_door.world", exitDoorLocation.getWorld().getName());
         }
 
-        // Save escape location
         config.set("escape.x", escapeLocation.getX());
         config.set("escape.y", escapeLocation.getY());
         config.set("escape.z", escapeLocation.getZ());
         config.set("escape.world", escapeLocation.getWorld().getName());
 
-        // Save initial spawn location
         config.set("initial_spawn.x", initialSpawnLocation.getX());
         config.set("initial_spawn.y", initialSpawnLocation.getY());
         config.set("initial_spawn.z", initialSpawnLocation.getZ());
@@ -168,57 +153,36 @@ public class ConfigManager {
         plugin.saveConfig();
     }
 
-    /**
-     * Register a regular chest location
-     */
     public void registerChest(String name, Location location) {
         chestLocations.put(name, location);
         chestOpened.put(name, false);
         saveConfig();
     }
 
-    /**
-     * Register a count chest location
-     */
     public void registerCountChest(String name, Location location) {
         countChestLocations.put(name, location);
         countChestOpened.put(name, false);
         saveConfig();
     }
 
-    /**
-     * Register door location
-     */
     public void registerDoor(Location location) {
         doorLocation = location;
         saveConfig();
     }
 
-    /**
-     * Register exit door location
-     */
     public void registerExitDoor(Location location) {
         exitDoorLocation = location;
         saveConfig();
     }
 
-    /**
-     * Mark a regular chest as opened
-     */
     public void setChestOpened(String name, boolean opened) {
         chestOpened.put(name, opened);
     }
 
-    /**
-     * Mark a count chest as opened
-     */
     public void setCountChestOpened(String name, boolean opened) {
         countChestOpened.put(name, opened);
     }
 
-    /**
-     * Reset all chests to unopened
-     */
     public void resetChests() {
         for (String name : chestOpened.keySet()) {
             chestOpened.put(name, false);
@@ -228,9 +192,6 @@ public class ConfigManager {
         }
     }
 
-    /**
-     * Check if all regular chests are opened
-     */
     public boolean areAllChestsOpened() {
         for (boolean opened : chestOpened.values()) {
             if (!opened) {
@@ -240,9 +201,6 @@ public class ConfigManager {
         return true;
     }
 
-    /**
-     * Check if regular chest exists at location
-     */
     public String getChestNameAtLocation(Location location) {
         for (Map.Entry<String, Location> entry : chestLocations.entrySet()) {
             if (entry.getValue().equals(location)) {
@@ -252,9 +210,6 @@ public class ConfigManager {
         return null;
     }
 
-    /**
-     * Check if count chest exists at location
-     */
     public String getCountChestNameAtLocation(Location location) {
         for (Map.Entry<String, Location> entry : countChestLocations.entrySet()) {
             if (entry.getValue().equals(location)) {
@@ -264,39 +219,23 @@ public class ConfigManager {
         return null;
     }
 
-    /**
-     * Check if regular chest is opened
-     */
     public boolean isChestOpened(String name) {
         return chestOpened.getOrDefault(name, false);
     }
 
-    /**
-     * Check if count chest is opened
-     */
     public boolean isCountChestOpened(String name) {
         return countChestOpened.getOrDefault(name, false);
     }
 
-    /**
-     * Set the required number of count chests per player
-     */
     public void setRequiredCountChests(int count) {
         requiredCountChests = count;
         saveConfig();
     }
 
-    /**
-     * Get the total number of count chests
-     */
     public int getTotalCountChests() {
         return countChestLocations.size();
     }
 
-    /**
-     * Get the total number of opened count chests
-     * This method is now only for backwards compatibility, as each player tracks their own chest count
-     */
     public int getOpenedCountChestsCount() {
         int count = 0;
         for (boolean opened : countChestOpened.values()) {
@@ -307,7 +246,6 @@ public class ConfigManager {
         return count;
     }
 
-    // Getters
     public Map<String, Location> getChestLocations() {
         return chestLocations;
     }

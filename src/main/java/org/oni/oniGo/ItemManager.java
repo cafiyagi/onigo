@@ -2,16 +2,15 @@ package org.oni.oniGo;
 
 import org.bukkit.ChatColor;
 import org.bukkit.Material;
+import org.bukkit.entity.ArmorStand;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.BookMeta;
 import org.bukkit.inventory.meta.ItemMeta;
-
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
+import org.bukkit.potion.PotionEffectType;
+import org.bukkit.scheduler.BukkitRunnable;
+import org.bukkit.GameMode;
+import java.util.*;
 
 public class ItemManager {
     private final OniGo plugin;
@@ -22,10 +21,13 @@ public class ItemManager {
     private Map<UUID, Long> chestTeleporterCooldowns = new HashMap<>();
     private Map<UUID, Long> playerEscapeCooldowns = new HashMap<>();
 
-    // クールダウン時間（ミリ秒）
-    private static final long DETECTOR_COOLDOWN_MS = 60000; // 60秒
-    private static final long TELEPORTER_COOLDOWN_MS = 120000; // 120秒
-    private static final long PLAYER_ESCAPE_COOLDOWN_MS = 60000; // 60秒
+    // ドローン使用回数
+    private Map<UUID, Integer> droneUsages = new HashMap<>();
+
+    // クールダウン時間
+    private static final long DETECTOR_COOLDOWN_MS = 60000;       // 60秒
+    private static final long TELEPORTER_COOLDOWN_MS = 120000;    // 120秒
+    private static final long PLAYER_ESCAPE_COOLDOWN_MS = 60000;  // 60秒
 
     public ItemManager(OniGo plugin, TeamManager teamManager) {
         this.plugin = plugin;
@@ -33,132 +35,96 @@ public class ItemManager {
     }
 
     /**
-     * Give all game items to a player
+     * 全アイテム付与
      */
     public void giveAllGameItems(Player player) {
-        // Give Yasha item
-        ItemStack yashaItem = createYashaItem();
-        player.getInventory().addItem(yashaItem);
+        // 夜叉アイテム
+        player.getInventory().addItem(createYashaItem());
+        // 隠れ玉
+        player.getInventory().addItem(createKakureDamaItem());
+        // 鬼アイテム
+        player.getInventory().addItem(createChestDetectorItem());
+        player.getInventory().addItem(createChestTeleporterItem());
+        // プレイヤー緊急脱出
+        player.getInventory().addItem(createPlayerEscapeItem());
+        // チーム選択本
+        player.getInventory().addItem(createTeamSelectBook());
+        // ゲームスタート本
+        player.getInventory().addItem(createGameStartBook());
+        // チェスト設定本
+        player.getInventory().addItem(createChestCountBook());
+        // 時間設定本
+        player.getInventory().addItem(createGameTimeBook());
+        // 出口の鍵
+        player.getInventory().addItem(createExitKeyItem());
+        // ドローンコントローラー
+        player.getInventory().addItem(createDroneControllerItem());
 
-        // Give hiding orb
-        ItemStack kakureDama = createKakureDamaItem();
-        player.getInventory().addItem(kakureDama);
-
-        // 新しい鬼アイテム
-        ItemStack chestDetector = createChestDetectorItem();
-        player.getInventory().addItem(chestDetector);
-
-        ItemStack chestTeleporter = createChestTeleporterItem();
-        player.getInventory().addItem(chestTeleporter);
-
-        // 新しいプレイヤーアイテム
-        ItemStack playerEscape = createPlayerEscapeItem();
-        player.getInventory().addItem(playerEscape);
-
-        // Give team selection book
-        ItemStack teamBook = createTeamSelectBook();
-        player.getInventory().addItem(teamBook);
-
-        // Give game start book
-        ItemStack startBook = createGameStartBook();
-        player.getInventory().addItem(startBook);
-
-        // Give chest count book
-        ItemStack chestCountBook = createChestCountBook();
-        player.getInventory().addItem(chestCountBook);
-
-        // Give game time book
-        ItemStack timeBook = createGameTimeBook();
-        player.getInventory().addItem(timeBook);
-
-        // Give exit key (for testing)
-        ItemStack exitKey = createExitKeyItem();
-        player.getInventory().addItem(exitKey);
-
-        player.sendMessage(ChatColor.GREEN + "ゲームアイテムを取得したよ！");
+        player.sendMessage(ChatColor.GREEN + "ゲームアイテムが付与されたよ！");
     }
 
     /**
-     * Distribute team selection books to all players
+     * 陣営選択本を全員へ
      */
     public void distributeTeamSelectionBooks() {
         for (Player p : plugin.getServer().getOnlinePlayers()) {
-            ItemStack selectBook = createTeamSelectBook();
-            p.getInventory().addItem(selectBook);
+            p.getInventory().addItem(createTeamSelectBook());
         }
     }
 
     /**
-     * Give game start book to a specific player
+     * スタート本を個人に
      */
     public void giveGameStartBook(String playerName) {
-        Player player = plugin.getServer().getPlayer(playerName);
-        if (player != null && player.isOnline()) {
-            ItemStack startBook = createGameStartBook();
-            player.getInventory().addItem(startBook);
+        Player p = plugin.getServer().getPlayer(playerName);
+        if (p != null && p.isOnline()) {
+            p.getInventory().addItem(createGameStartBook());
         }
     }
 
     /**
-     * Give chest count book to a specific player
+     * チェスト設定本を個人に
      */
     public void giveChestCountBook(String playerName) {
-        Player player = plugin.getServer().getPlayer(playerName);
-        if (player != null && player.isOnline()) {
-            ItemStack chestCountBook = createChestCountBook();
-            player.getInventory().addItem(chestCountBook);
+        Player p = plugin.getServer().getPlayer(playerName);
+        if (p != null && p.isOnline()) {
+            p.getInventory().addItem(createChestCountBook());
         }
     }
 
     /**
-     * Give game time book to a specific player
+     * ゲーム時間設定本を個人に
      */
     public void giveGameTimeBook(String playerName) {
-        Player player = plugin.getServer().getPlayer(playerName);
-        if (player != null && player.isOnline()) {
-            ItemStack timeBook = createGameTimeBook();
-            player.getInventory().addItem(timeBook);
+        Player p = plugin.getServer().getPlayer(playerName);
+        if (p != null && p.isOnline()) {
+            p.getInventory().addItem(createGameTimeBook());
         }
     }
 
     /**
-     * Distribute team-specific items to all players based on their team
+     * チーム別アイテム配布
      */
     public void distributeTeamItems() {
         for (Player p : plugin.getServer().getOnlinePlayers()) {
-            // Clear inventory completely
             clearPlayerInventory(p);
-
             if (teamManager.isPlayerInOniTeam(p)) {
-                // 鬼チーム用アイテム
-                ItemStack yashaItem = createYashaItem();
-                p.getInventory().addItem(yashaItem);
-
-                // 新しい鬼アイテム
-                ItemStack chestDetector = createChestDetectorItem();
-                p.getInventory().addItem(chestDetector);
-
-                ItemStack chestTeleporter = createChestTeleporterItem();
-                p.getInventory().addItem(chestTeleporter);
-
-                p.sendMessage(ChatColor.RED + "鬼チーム用アイテムを付与しました");
+                // 鬼
+                p.getInventory().addItem(createYashaItem());
+                p.getInventory().addItem(createChestDetectorItem());
+                p.getInventory().addItem(createChestTeleporterItem());
+                p.sendMessage(ChatColor.RED + "鬼用アイテム配布！");
             } else if (teamManager.isPlayerInPlayerTeam(p)) {
-                // Player team gets hiding orb
-                ItemStack kakureDama = createKakureDamaItem();
-                p.getInventory().addItem(kakureDama);
-
-                // Add new player escape item
-                ItemStack playerEscape = createPlayerEscapeItem();
-                p.getInventory().addItem(playerEscape);
-
-                p.sendMessage(ChatColor.BLUE + "プレイヤーチーム用アイテムを付与しました");
+                // プレイヤー
+                p.getInventory().addItem(createKakureDamaItem());
+                p.getInventory().addItem(createPlayerEscapeItem());
+                p.getInventory().addItem(createDroneControllerItem()); // ドローン
+                droneUsages.put(p.getUniqueId(), 5); // ドローン使用回数=5回
+                p.sendMessage(ChatColor.BLUE + "プレイヤー用アイテム配布！");
             }
         }
     }
 
-    /**
-     * Clear player inventory completely including armor
-     */
     public void clearPlayerInventory(Player player) {
         player.getInventory().clear();
         player.getInventory().setHelmet(null);
@@ -168,9 +134,6 @@ public class ItemManager {
         player.getInventory().setItemInOffHand(null);
     }
 
-    /**
-     * Create Yasha (demon) item
-     */
     public ItemStack createYashaItem() {
         ItemStack star = new ItemStack(Material.NETHER_STAR);
         ItemMeta meta = star.getItemMeta();
@@ -179,167 +142,169 @@ public class ItemManager {
         return star;
     }
 
-    /**
-     * Create hiding orb (kakure dama) item
-     */
     public ItemStack createKakureDamaItem() {
-        ItemStack kakureDama = new ItemStack(Material.DIAMOND);
-        ItemMeta meta = kakureDama.getItemMeta();
+        ItemStack item = new ItemStack(Material.DIAMOND);
+        ItemMeta meta = item.getItemMeta();
         meta.setDisplayName(ChatColor.AQUA + "隠れ玉");
-        List<String> lore = new ArrayList<>();
-        lore.add("右クリックで透明化、再度右クリックで透明解除");
-        meta.setLore(lore);
-        kakureDama.setItemMeta(meta);
-        return kakureDama;
+        meta.setLore(Collections.singletonList("右クリックで透明化/再度右クリックで解除"));
+        item.setItemMeta(meta);
+        return item;
     }
 
-    /**
-     * Create chest detector item (for oni)
-     */
     public ItemStack createChestDetectorItem() {
-        ItemStack detector = new ItemStack(Material.BLUE_WOOL);
-        ItemMeta meta = detector.getItemMeta();
+        ItemStack item = new ItemStack(Material.BLUE_WOOL);
+        ItemMeta meta = item.getItemMeta();
         meta.setDisplayName(ChatColor.RED + "プレイヤー探知コンパス");
-        List<String> lore = new ArrayList<>();
-        lore.add("右クリックでプレイヤーが近くにいるチェストの場所を探知");
-        lore.add("クールダウン：60秒");
-        meta.setLore(lore);
-        detector.setItemMeta(meta);
-        return detector;
+        meta.setLore(Arrays.asList("右クリック: プレイヤー付近のチェストを探知", "クールダウン60秒"));
+        item.setItemMeta(meta);
+        return item;
     }
 
-    /**
-     * Create chest teleporter item (for oni)
-     */
     public ItemStack createChestTeleporterItem() {
-        ItemStack teleporter = new ItemStack(Material.GREEN_WOOL);
-        ItemMeta meta = teleporter.getItemMeta();
+        ItemStack item = new ItemStack(Material.GREEN_WOOL);
+        ItemMeta meta = item.getItemMeta();
         meta.setDisplayName(ChatColor.RED + "チェストワープの真珠");
-        List<String> lore = new ArrayList<>();
-        lore.add("右クリックでプレイヤーの近くのチェストにワープ");
-        lore.add("クールダウン：120秒");
-        meta.setLore(lore);
-        teleporter.setItemMeta(meta);
-        return teleporter;
+        meta.setLore(Arrays.asList("右クリック: プレイヤー付近のチェストにワープ", "クールダウン120秒"));
+        item.setItemMeta(meta);
+        return item;
     }
 
-    /**
-     * Create player escape item
-     */
     public ItemStack createPlayerEscapeItem() {
-        ItemStack escapeItem = new ItemStack(Material.NETHER_STAR);
-        ItemMeta meta = escapeItem.getItemMeta();
+        ItemStack item = new ItemStack(Material.NETHER_STAR);
+        ItemMeta meta = item.getItemMeta();
         meta.setDisplayName(ChatColor.BLUE + "緊急脱出アイテム");
-        List<String> lore = new ArrayList<>();
-        lore.add("右クリックで鬼が近くにいる場合、ランダムなチェストの近くにテレポート");
-        lore.add("クールダウン：60秒");
-        meta.setLore(lore);
-        escapeItem.setItemMeta(meta);
-        return escapeItem;
+        meta.setLore(Arrays.asList("鬼が近くにいる時に右クリック", "チェスト付近へランダムワープ", "クールダウン60秒"));
+        item.setItemMeta(meta);
+        return item;
     }
 
-    /**
-     * Create exit key item
-     */
     public ItemStack createExitKeyItem() {
-        ItemStack exitKey = new ItemStack(Material.TRIPWIRE_HOOK);
-        ItemMeta meta = exitKey.getItemMeta();
+        ItemStack item = new ItemStack(Material.TRIPWIRE_HOOK);
+        ItemMeta meta = item.getItemMeta();
         meta.setDisplayName(ChatColor.GOLD + "出口の鍵");
-        List<String> lore = new ArrayList<>();
-        lore.add("チェストを開けて入手したアイテム");
-        lore.add("出口のドアで使用することで脱出が可能になる");
-        meta.setLore(lore);
-        exitKey.setItemMeta(meta);
-        return exitKey;
+        meta.setLore(Arrays.asList("カウントチェスト開封で入手", "出口ドアを開けるために使用"));
+        item.setItemMeta(meta);
+        return item;
     }
 
-    /**
-     * Create team selection book
-     */
     public ItemStack createTeamSelectBook() {
-        ItemStack selectBook = new ItemStack(Material.WRITTEN_BOOK);
-        BookMeta bookMeta = (BookMeta) selectBook.getItemMeta();
-        bookMeta.setTitle("陣営選択本");
-        bookMeta.setAuthor("鬼ごっこプラグイン");
-        List<String> pages = new ArrayList<>();
-        pages.add("右クリックして陣営を選ぼう！\n\n・左クリック：プレイヤー陣営\n・右クリック：鬼陣営");
-        bookMeta.setPages(pages);
-        selectBook.setItemMeta(bookMeta);
-        return selectBook;
+        ItemStack book = new ItemStack(Material.WRITTEN_BOOK);
+        BookMeta meta = (BookMeta) book.getItemMeta();
+        meta.setTitle("陣営選択本");
+        meta.setAuthor("鬼ごっこプラグイン");
+        meta.setPages(
+                "右クリックでGUIを開いて陣営を選択してください。\n\n" +
+                        "・左の紙: プレイヤー陣営\n" +
+                        "・右の紙: 鬼陣営"
+        );
+        book.setItemMeta(meta);
+        return book;
     }
 
-    /**
-     * Create game start book
-     */
     public ItemStack createGameStartBook() {
-        ItemStack startBook = new ItemStack(Material.WRITTEN_BOOK);
-        BookMeta startBookMeta = (BookMeta) startBook.getItemMeta();
-        startBookMeta.setTitle("ゲームスタート本");
-        startBookMeta.setAuthor("鬼ごっこプラグイン");
-        List<String> startPages = new ArrayList<>();
-        startPages.add("§l§4★ ゲームスタート ★§r\n\n"+
-                "§2[通常スタート]§r\n"+
-                "すべてのプレイヤーが陣営を選択した状態で実行するとゲームが開始します。\n\n"+
-                "§c[鬼スタート]§r\n"+
-                "クリックした人が鬼になります。他のプレイヤーは自動的にプレイヤー陣営に割り当てられます。\n\n"+
-                "§d[ランダム鬼スタート]§r\n"+
-                "ランダムで1人を鬼に選びます。陣営選択せずにゲームを開始できます。");
-        startBookMeta.setPages(startPages);
-        startBook.setItemMeta(startBookMeta);
-        return startBook;
+        ItemStack book = new ItemStack(Material.WRITTEN_BOOK);
+        BookMeta meta = (BookMeta) book.getItemMeta();
+        meta.setTitle("ゲームスタート本");
+        meta.setAuthor("鬼ごっこプラグイン");
+        meta.setPages(
+                "「通常スタート」「鬼スタート」「ランダム鬼スタート」\n" +
+                        "それぞれのモードを選択してゲームを開始できます。"
+        );
+        book.setItemMeta(meta);
+        return book;
     }
 
-    /**
-     * Create chest count book
-     */
     public ItemStack createChestCountBook() {
-        ItemStack chestCountBook = new ItemStack(Material.WRITTEN_BOOK);
-        BookMeta chestCountBookMeta = (BookMeta) chestCountBook.getItemMeta();
-        chestCountBookMeta.setTitle("チェスト設定本");
-        chestCountBookMeta.setAuthor("鬼ごっこプラグイン");
-        List<String> chestCountPages = new ArrayList<>();
-
-        // 登録済みチェスト数を取得
-        int totalChests = plugin.getConfigManager().getTotalCountChests();
-        int currentRequired = plugin.getConfigManager().getRequiredCountChests();
-
-        chestCountPages.add("§l§6★ カウントチェスト設定 ★§r\n\n"+
-                "現在の設定:\n" +
-                "・必要数: §e" + currentRequired + "§r個/プレイヤー\n" +
-                "・登録済み: §e" + totalChests + "§r個\n\n" +
-                "§a[1個]§r - 簡単モード\n"+
-                "§e[3個]§r - 標準モード\n"+
-                "§c[5個]§r - 難しいモード\n"+
-                "§d[カスタム]§r - 数値入力(最大" + totalChests + "個)");
-        chestCountBookMeta.setPages(chestCountPages);
-        chestCountBook.setItemMeta(chestCountBookMeta);
-        return chestCountBook;
+        ItemStack book = new ItemStack(Material.WRITTEN_BOOK);
+        BookMeta meta = (BookMeta) book.getItemMeta();
+        meta.setTitle("チェスト設定本");
+        meta.setAuthor("鬼ごっこプラグイン");
+        meta.setPages(
+                "カウントチェスト数の設定を変更できます。\n" +
+                        "「簡単(1個)」「普通(3個)」「難しい(5個)」「カスタム」"
+        );
+        book.setItemMeta(meta);
+        return book;
     }
 
-    /**
-     * Create game time book
-     */
     public ItemStack createGameTimeBook() {
-        ItemStack timeBook = new ItemStack(Material.WRITTEN_BOOK);
-        BookMeta timeBookMeta = (BookMeta) timeBook.getItemMeta();
-        timeBookMeta.setTitle("ゲーム時間設定本");
-        timeBookMeta.setAuthor("鬼ごっこプラグイン");
-        List<String> timePages = new ArrayList<>();
+        ItemStack book = new ItemStack(Material.WRITTEN_BOOK);
+        BookMeta meta = (BookMeta) book.getItemMeta();
+        meta.setTitle("ゲーム時間設定本");
+        meta.setAuthor("鬼ごっこプラグイン");
+        meta.setPages(
+                "「180秒」「300秒」「600秒」「カスタム」\n" +
+                        "いずれかを選択してゲーム時間を設定します。"
+        );
+        book.setItemMeta(meta);
+        return book;
+    }
 
-        timePages.add("§l§6★ ゲーム時間設定 ★§r\n\n"+
-                "現在の設定:\n" +
-                "・ゲーム時間: §e" + plugin.getGameManager().getRemainingTime() + "§r秒\n\n" +
-                "§a[180秒]§r - 短時間モード\n"+
-                "§e[300秒]§r - 標準モード\n"+
-                "§c[600秒]§r - 長時間モード\n"+
-                "§d[カスタム]§r - 数値入力(最低60秒)");
-        timeBookMeta.setPages(timePages);
-        timeBook.setItemMeta(timeBookMeta);
-        return timeBook;
+    // **追加** ドローンコントローラー
+    public ItemStack createDroneControllerItem() {
+        ItemStack item = new ItemStack(Material.HEART_OF_THE_SEA);
+        ItemMeta meta = item.getItemMeta();
+        meta.setDisplayName(ChatColor.LIGHT_PURPLE + "ドローンコントローラー");
+        meta.setLore(Arrays.asList(
+                "右クリックで5秒間ドローン視点に切り替え",
+                "Oni（鬼）を見つけると5秒間ハイライト！",
+                "使用回数: 最大5回"
+        ));
+        item.setItemMeta(meta);
+        return item;
+    }
+
+    // 使用開始
+    public void startDroneMode(Player player) {
+        UUID pid = player.getUniqueId();
+        int usageLeft = droneUsages.getOrDefault(pid, 0);
+        if (usageLeft <= 0) {
+            player.sendMessage(ChatColor.RED + "ドローンの使用回数が残っていないよ！");
+            return;
+        }
+        usageLeft--;
+        droneUsages.put(pid, usageLeft);
+        player.sendMessage(ChatColor.LIGHT_PURPLE + "ドローン起動！残り使用回数: " + usageLeft);
+
+        // ドローン用のArmorStand生成（見た目は非表示＆重力なし）
+        final ArmorStand drone = player.getWorld().spawn(player.getLocation().clone().add(0, 1, 0), ArmorStand.class);
+        drone.setInvisible(true);
+        drone.setGravity(false);
+        drone.setInvulnerable(true);
+        drone.setMarker(true);
+
+        // プレイヤーが向いてる方向を取得（org.bukkit.util.Vectorを使用）
+        final org.bukkit.util.Vector direction = player.getLocation().getDirection().normalize();
+
+        new BukkitRunnable() {
+            int ticks = 0;
+            @Override
+            public void run() {
+                if (ticks >= 100) { // 5秒間（5*20ティック）
+                    drone.remove();
+                    player.sendMessage(ChatColor.GRAY + "ドローン操作が終了したよ");
+                    cancel();
+                    return;
+                }
+                // ドローンを向いてる方向に0.5ブロックずつ移動
+                drone.teleport(drone.getLocation().add(direction.clone().multiply(0.5)));
+                ticks++;
+
+                // ドローン近くに鬼がいるかチェック（半径5ブロック以内）
+                for (Player p : drone.getWorld().getPlayers()) {
+                    if (teamManager.isPlayerInOniTeam(p)) {
+                        if (p.getLocation().distance(drone.getLocation()) <= 5) {
+                            player.sendMessage(ChatColor.RED + "鬼が近くにいる！");
+                            break;
+                        }
+                    }
+                }
+            }
+        }.runTaskTimer(plugin, 0L, 1L);
     }
 
     /**
-     * Check if an item is the Yasha item
+     * 判別系
      */
     public boolean isYashaItem(ItemStack item) {
         return item != null &&
@@ -348,9 +313,6 @@ public class ItemManager {
                 "夜叉".equals(item.getItemMeta().getDisplayName());
     }
 
-    /**
-     * Check if an item is the hiding orb (kakure dama)
-     */
     public boolean isKakureDamaItem(ItemStack item) {
         return item != null &&
                 item.getType() == Material.DIAMOND &&
@@ -358,9 +320,6 @@ public class ItemManager {
                 (ChatColor.AQUA + "隠れ玉").equals(item.getItemMeta().getDisplayName());
     }
 
-    /**
-     * Check if an item is the chest detector
-     */
     public boolean isChestDetectorItem(ItemStack item) {
         return item != null &&
                 item.getType() == Material.BLUE_WOOL &&
@@ -368,9 +327,6 @@ public class ItemManager {
                 (ChatColor.RED + "プレイヤー探知コンパス").equals(item.getItemMeta().getDisplayName());
     }
 
-    /**
-     * Check if an item is the chest teleporter
-     */
     public boolean isChestTeleporterItem(ItemStack item) {
         return item != null &&
                 item.getType() == Material.GREEN_WOOL &&
@@ -378,9 +334,6 @@ public class ItemManager {
                 (ChatColor.RED + "チェストワープの真珠").equals(item.getItemMeta().getDisplayName());
     }
 
-    /**
-     * Check if an item is the player escape item
-     */
     public boolean isPlayerEscapeItem(ItemStack item) {
         return item != null &&
                 item.getType() == Material.NETHER_STAR &&
@@ -388,9 +341,6 @@ public class ItemManager {
                 (ChatColor.BLUE + "緊急脱出アイテム").equals(item.getItemMeta().getDisplayName());
     }
 
-    /**
-     * Check if an item is the exit key
-     */
     public boolean isExitKeyItem(ItemStack item) {
         return item != null &&
                 item.getType() == Material.TRIPWIRE_HOOK &&
@@ -398,173 +348,105 @@ public class ItemManager {
                 (ChatColor.GOLD + "出口の鍵").equals(item.getItemMeta().getDisplayName());
     }
 
-    /**
-     * Check if an item is the team selection book
-     */
     public boolean isTeamSelectBook(ItemStack item) {
-        return item != null &&
-                item.getType() == Material.WRITTEN_BOOK &&
-                item.hasItemMeta() &&
-                item.getItemMeta() instanceof BookMeta &&
-                "陣営選択本".equals(((BookMeta) item.getItemMeta()).getTitle());
+        if (item == null) return false;
+        if (item.getType() != Material.WRITTEN_BOOK) return false;
+        if (!item.hasItemMeta()) return false;
+        if (!(item.getItemMeta() instanceof BookMeta)) return false;
+        BookMeta bm = (BookMeta) item.getItemMeta();
+        return "陣営選択本".equals(bm.getTitle());
     }
 
-    /**
-     * Check if an item is the game start book
-     */
     public boolean isGameStartBook(ItemStack item) {
-        return item != null &&
-                item.getType() == Material.WRITTEN_BOOK &&
-                item.hasItemMeta() &&
-                item.getItemMeta() instanceof BookMeta &&
-                "ゲームスタート本".equals(((BookMeta) item.getItemMeta()).getTitle());
+        if (item == null) return false;
+        if (item.getType() != Material.WRITTEN_BOOK) return false;
+        if (!item.hasItemMeta()) return false;
+        if (!(item.getItemMeta() instanceof BookMeta)) return false;
+        BookMeta bm = (BookMeta) item.getItemMeta();
+        return "ゲームスタート本".equals(bm.getTitle());
     }
 
-    /**
-     * Check if an item is the chest count book
-     */
     public boolean isChestCountBook(ItemStack item) {
-        return item != null &&
-                item.getType() == Material.WRITTEN_BOOK &&
-                item.hasItemMeta() &&
-                item.getItemMeta() instanceof BookMeta &&
-                "チェスト設定本".equals(((BookMeta) item.getItemMeta()).getTitle());
+        if (item == null) return false;
+        if (item.getType() != Material.WRITTEN_BOOK) return false;
+        if (!item.hasItemMeta()) return false;
+        if (!(item.getItemMeta() instanceof BookMeta)) return false;
+        BookMeta bm = (BookMeta) item.getItemMeta();
+        return "チェスト設定本".equals(bm.getTitle());
     }
 
-    /**
-     * Check if an item is the game time book
-     */
     public boolean isGameTimeBook(ItemStack item) {
+        if (item == null) return false;
+        if (item.getType() != Material.WRITTEN_BOOK) return false;
+        if (!item.hasItemMeta()) return false;
+        if (!(item.getItemMeta() instanceof BookMeta)) return false;
+        BookMeta bm = (BookMeta) item.getItemMeta();
+        return "ゲーム時間設定本".equals(bm.getTitle());
+    }
+
+    // ドローンコントローラーかどうか
+    public boolean isDroneControllerItem(ItemStack item) {
         return item != null &&
-                item.getType() == Material.WRITTEN_BOOK &&
+                item.getType() == Material.HEART_OF_THE_SEA &&
                 item.hasItemMeta() &&
-                item.getItemMeta() instanceof BookMeta &&
-                "ゲーム時間設定本".equals(((BookMeta) item.getItemMeta()).getTitle());
+                (ChatColor.LIGHT_PURPLE + "ドローンコントローラー").equals(item.getItemMeta().getDisplayName());
     }
 
     /**
-     * Check if chest detector is on cooldown
+     * クールダウン関連
      */
-    public boolean isChestDetectorOnCooldown(UUID playerUuid) {
-        if (!chestDetectorCooldowns.containsKey(playerUuid)) {
-            return false;
-        }
-
-        long lastUsed = chestDetectorCooldowns.get(playerUuid);
-        long currentTime = System.currentTimeMillis();
-        return (currentTime - lastUsed) < DETECTOR_COOLDOWN_MS;
+    public boolean isChestDetectorOnCooldown(UUID uuid) {
+        if (!chestDetectorCooldowns.containsKey(uuid)) return false;
+        long lastUsed = chestDetectorCooldowns.get(uuid);
+        return (System.currentTimeMillis() - lastUsed) < DETECTOR_COOLDOWN_MS;
+    }
+    public void setChestDetectorCooldown(UUID uuid) {
+        chestDetectorCooldowns.put(uuid, System.currentTimeMillis());
+    }
+    public int getChestDetectorRemainingCooldown(UUID uuid) {
+        if (!chestDetectorCooldowns.containsKey(uuid)) return 0;
+        long lastUsed = chestDetectorCooldowns.get(uuid);
+        long elapsed = System.currentTimeMillis() - lastUsed;
+        if (elapsed >= DETECTOR_COOLDOWN_MS) return 0;
+        return (int)((DETECTOR_COOLDOWN_MS - elapsed) / 1000);
     }
 
-    /**
-     * Set chest detector on cooldown
-     */
-    public void setChestDetectorCooldown(UUID playerUuid) {
-        chestDetectorCooldowns.put(playerUuid, System.currentTimeMillis());
+    public boolean isChestTeleporterOnCooldown(UUID uuid) {
+        if (!chestTeleporterCooldowns.containsKey(uuid)) return false;
+        long lastUsed = chestTeleporterCooldowns.get(uuid);
+        return (System.currentTimeMillis() - lastUsed) < TELEPORTER_COOLDOWN_MS;
+    }
+    public void setChestTeleporterCooldown(UUID uuid) {
+        chestTeleporterCooldowns.put(uuid, System.currentTimeMillis());
+    }
+    public int getChestTeleporterRemainingCooldown(UUID uuid) {
+        if (!chestTeleporterCooldowns.containsKey(uuid)) return 0;
+        long lastUsed = chestTeleporterCooldowns.get(uuid);
+        long elapsed = System.currentTimeMillis() - lastUsed;
+        if (elapsed >= TELEPORTER_COOLDOWN_MS) return 0;
+        return (int)((TELEPORTER_COOLDOWN_MS - elapsed) / 1000);
     }
 
-    /**
-     * Get chest detector remaining cooldown in seconds
-     */
-    public int getChestDetectorRemainingCooldown(UUID playerUuid) {
-        if (!chestDetectorCooldowns.containsKey(playerUuid)) {
-            return 0;
-        }
-
-        long lastUsed = chestDetectorCooldowns.get(playerUuid);
-        long currentTime = System.currentTimeMillis();
-        long elapsedTime = currentTime - lastUsed;
-
-        if (elapsedTime >= DETECTOR_COOLDOWN_MS) {
-            return 0;
-        }
-
-        return (int)((DETECTOR_COOLDOWN_MS - elapsedTime) / 1000);
+    public boolean isPlayerEscapeOnCooldown(UUID uuid) {
+        if (!playerEscapeCooldowns.containsKey(uuid)) return false;
+        long lastUsed = playerEscapeCooldowns.get(uuid);
+        return (System.currentTimeMillis() - lastUsed) < PLAYER_ESCAPE_COOLDOWN_MS;
+    }
+    public void setPlayerEscapeCooldown(UUID uuid) {
+        playerEscapeCooldowns.put(uuid, System.currentTimeMillis());
+    }
+    public int getPlayerEscapeRemainingCooldown(UUID uuid) {
+        if (!playerEscapeCooldowns.containsKey(uuid)) return 0;
+        long lastUsed = playerEscapeCooldowns.get(uuid);
+        long elapsed = System.currentTimeMillis() - lastUsed;
+        if (elapsed >= PLAYER_ESCAPE_COOLDOWN_MS) return 0;
+        return (int)((PLAYER_ESCAPE_COOLDOWN_MS - elapsed) / 1000);
     }
 
-    /**
-     * Check if chest teleporter is on cooldown
-     */
-    public boolean isChestTeleporterOnCooldown(UUID playerUuid) {
-        if (!chestTeleporterCooldowns.containsKey(playerUuid)) {
-            return false;
-        }
-
-        long lastUsed = chestTeleporterCooldowns.get(playerUuid);
-        long currentTime = System.currentTimeMillis();
-        return (currentTime - lastUsed) < TELEPORTER_COOLDOWN_MS;
-    }
-
-    /**
-     * Set chest teleporter on cooldown
-     */
-    public void setChestTeleporterCooldown(UUID playerUuid) {
-        chestTeleporterCooldowns.put(playerUuid, System.currentTimeMillis());
-    }
-
-    /**
-     * Get chest teleporter remaining cooldown in seconds
-     */
-    public int getChestTeleporterRemainingCooldown(UUID playerUuid) {
-        if (!chestTeleporterCooldowns.containsKey(playerUuid)) {
-            return 0;
-        }
-
-        long lastUsed = chestTeleporterCooldowns.get(playerUuid);
-        long currentTime = System.currentTimeMillis();
-        long elapsedTime = currentTime - lastUsed;
-
-        if (elapsedTime >= TELEPORTER_COOLDOWN_MS) {
-            return 0;
-        }
-
-        return (int)((TELEPORTER_COOLDOWN_MS - elapsedTime) / 1000);
-    }
-
-    /**
-     * Check if player escape item is on cooldown
-     */
-    public boolean isPlayerEscapeOnCooldown(UUID playerUuid) {
-        if (!playerEscapeCooldowns.containsKey(playerUuid)) {
-            return false;
-        }
-
-        long lastUsed = playerEscapeCooldowns.get(playerUuid);
-        long currentTime = System.currentTimeMillis();
-        return (currentTime - lastUsed) < PLAYER_ESCAPE_COOLDOWN_MS;
-    }
-
-    /**
-     * Set player escape item on cooldown
-     */
-    public void setPlayerEscapeCooldown(UUID playerUuid) {
-        playerEscapeCooldowns.put(playerUuid, System.currentTimeMillis());
-    }
-
-    /**
-     * Get player escape item remaining cooldown in seconds
-     */
-    public int getPlayerEscapeRemainingCooldown(UUID playerUuid) {
-        if (!playerEscapeCooldowns.containsKey(playerUuid)) {
-            return 0;
-        }
-
-        long lastUsed = playerEscapeCooldowns.get(playerUuid);
-        long currentTime = System.currentTimeMillis();
-        long elapsedTime = currentTime - lastUsed;
-
-        if (elapsedTime >= PLAYER_ESCAPE_COOLDOWN_MS) {
-            return 0;
-        }
-
-        return (int)((PLAYER_ESCAPE_COOLDOWN_MS - elapsedTime) / 1000);
-    }
-
-    /**
-     * Reset all cooldowns
-     */
     public void resetAllCooldowns() {
         chestDetectorCooldowns.clear();
         chestTeleporterCooldowns.clear();
         playerEscapeCooldowns.clear();
+        // ドローン使用回数はゲーム開始時に再配布されるので初期化しない
     }
 }
