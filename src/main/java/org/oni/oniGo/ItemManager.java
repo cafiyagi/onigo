@@ -125,10 +125,9 @@ public class ItemManager {
         for (Player p : plugin.getServer().getOnlinePlayers()) {
             clearPlayerInventory(p);
             if (teamManager.isPlayerInOniTeam(p)) {
-                // 鬼タイプ選択画面
-                p.sendMessage(ChatColor.RED + "使用する鬼タイプを選択してください");
-                // GUI表示
-                plugin.openOniTypeSelectionGUI(p);
+                // 鬼タイプに基づいてアイテム配布
+                OniType type = teamManager.getPlayerOniType(p);
+                distributeOniItems(p, type);
             } else if (teamManager.isPlayerInPlayerTeam(p)) {
                 // プレイヤー
                 p.getInventory().addItem(createKakureDamaItem());

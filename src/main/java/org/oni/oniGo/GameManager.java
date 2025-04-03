@@ -9,6 +9,7 @@ import org.bukkit.boss.BarStyle;
 import org.bukkit.boss.BossBar;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.potion.PotionEffect;
 import org.bukkit.potion.PotionEffectType;
 import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.scheduler.BukkitTask;
@@ -69,6 +70,10 @@ public class GameManager {
     public boolean startGame(Player sender) {
         if (teamManager.areAnyPlayersUnassigned()) {
             sendConfigMessage(sender, ChatColor.RED + "陣営を選択していない人がいるよ。");
+            return false;
+        }
+        if (!teamManager.areAllPlayersReady()) {
+            sendConfigMessage(sender, ChatColor.RED + "鬼タイプをまだ選択していないプレイヤーがいるよ。");
             return false;
         }
         if (gameRunning) {
@@ -227,6 +232,8 @@ public class GameManager {
         teleportPlayersToSpawns();
         // チーム別アイテム
         itemManager.distributeTeamItems();
+        // 鬼タイプ効果適用
+        applyOniTypeEffects();
         // ゲームタイマー
         startGameTimer();
         timerBar.setProgress(1.0);
@@ -244,6 +251,50 @@ public class GameManager {
         effectManager.startGetsugaChestDetection();
 
         Bukkit.broadcastMessage(ChatColor.GREEN + "ゲームスタート！残り時間：" + remainingTime + "秒");
+    }
+
+    /**
+     * 鬼タイプ効果適用
+     */
+    private void applyOniTypeEffects() {
+        for (Player p : Bukkit.getOnlinePlayers()) {
+            if (teamManager.isPlayerInOniTeam(p)) {
+                OniType type = teamManager.getPlayerOniType(p);
+
+                // 闇叉なら暗闇効果適用
+                if (type == OniType.ANSHA) {
+                    effectManager.applyAnshaPermaDarkness(p);
+                }
+            }
+        }
+    }
+
+    /**
+     * 鬼タイプに合わせた速度適用
+     */
+    private void applyOniTypeSpeed(Player player, OniType type) {
+        // 速度効果を一旦解除
+        player.removePotionEffect(PotionEffectType.getByName("SPEED"));
+        player.removePotionEffect(PotionEffectType.getByName("SLOW"));
+
+        int speedLevel = 0;
+        switch (type) {
+            case KISHA:
+                speedLevel = 2; // 最高速度
+                break;
+            case ANSHA:
+                speedLevel = 1; // 1.2倍速
+                break;
+            case GETSUGA:
+                speedLevel = 1; // 1.5倍速
+                break;
+            default:
+                return; // YASHA は標準速度
+        }
+
+        if (speedLevel > 0) {
+            player.addPotionEffect(new PotionEffect(PotionEffectType.getByName("SPEED"), 999999, speedLevel, false, false));
+        }
     }
 
     /**
@@ -531,8 +582,8 @@ public class GameManager {
                     player.teleport(respawnLoc);
                     player.setGameMode(GameMode.ADVENTURE);
                     player.sendMessage(ChatColor.GREEN + "復活");
-                    player.removePotionEffect(PotionEffectType.INVISIBILITY);
-                    player.removePotionEffect(PotionEffectType.SLOWNESS);
+                    player.removePotionEffect(PotionEffectType.getByName("INVISIBILITY"));
+                    player.removePotionEffect(PotionEffectType.getByName("SLOW"));
                     updateScoreboard();
                 }
             }
@@ -816,10 +867,10 @@ public class GameManager {
             return;
         }
         // ランダム選択
-        Random rand = new Random();
-        Location targetLoc = chestLocs.get(rand.nextInt(chestLocs.size())).clone().add(0,1,0);
+        Random random = new Random();
+        Location targetLoc = chestLocs.get(random.nextInt(chestLocs.size())).clone().add(0,1,0);
         // 暗闇
-        player.addPotionEffect(new org.bukkit.potion.PotionEffect(PotionEffectType.BLINDNESS, 20 * 3, 1, false, false));
+        player.addPotionEffect(new org.bukkit.potion.PotionEffect(PotionEffectType.getByName("BLINDNESS"), 20 * 3, 1, false, false));
         player.playSound(player.getLocation(), Sound.ENTITY_ENDERMAN_TELEPORT, 1f, 1f);
 
         // テレポート
@@ -1033,6 +1084,11 @@ public class GameManager {
         if (chestLocations.isEmpty()) {
             Bukkit.broadcastMessage(ChatColor.RED + "テレポート先のチェストがありません");
             return;
+        }
+
+        // 全プレイヤーに通知
+        for (Player p : Bukkit.getOnlinePlayers()) {
+            p.sendTitle(ChatColor.AQUA + "月牙の三日月！", ChatColor.BLUE + "全プレイヤーがランダムテレポート...", 10, 30, 10);
         }
 
         Random random = new Random();

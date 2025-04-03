@@ -25,6 +25,9 @@ public class TeamManager {
     private Map<UUID, OniType> playerOniTypes = new HashMap<>();
     private Map<UUID, Integer> playerHitCounts = new HashMap<>(); // 攻撃カウント
 
+    // プレイヤー準備状態追跡
+    private Set<UUID> readyPlayers = new HashSet<>();
+
     public TeamManager(OniGo plugin) {
         this.plugin = plugin;
         setupScoreboard();
@@ -53,6 +56,8 @@ public class TeamManager {
     public void addPlayerToPlayerTeam(Player player) {
         oniTeam.removeEntry(player.getName());
         playerTeam.addEntry(player.getName());
+        // プレイヤーチームは自動的に準備完了とする
+        readyPlayers.add(player.getUniqueId());
     }
 
     public void addPlayerToOniTeam(Player player) {
@@ -71,6 +76,8 @@ public class TeamManager {
         playerOniTypes.put(player.getUniqueId(), type);
         // 攻撃カウントをリセット
         playerHitCounts.put(player.getUniqueId(), 0);
+        // 準備完了マーク
+        readyPlayers.add(player.getUniqueId());
     }
 
     public OniType getPlayerOniType(Player player) {
@@ -95,6 +102,7 @@ public class TeamManager {
         doorOpenedPlayers.clear();
         playerOniTypes.clear();
         playerHitCounts.clear();
+        readyPlayers.clear();
 
         if (playerTeam != null) playerTeam.unregister();
         if (oniTeam != null) oniTeam.unregister();
@@ -120,6 +128,17 @@ public class TeamManager {
             }
         }
         return false;
+    }
+
+    public boolean areAllPlayersReady() {
+        for (Player p : Bukkit.getOnlinePlayers()) {
+            if (playerTeam.hasEntry(p.getName()) || oniTeam.hasEntry(p.getName())) {
+                if (!readyPlayers.contains(p.getUniqueId())) {
+                    return false;
+                }
+            }
+        }
+        return true;
     }
 
     public void initializeGameState() {

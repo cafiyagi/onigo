@@ -704,9 +704,16 @@ public final class OniGo extends JavaPlugin implements CommandExecutor, Listener
                 return;
             }
 
+            // 闇叉「転生」使用時
             if (itemManager.hasTeleportMarker(pid)) {
                 // マーカーに転送
                 Location marker = itemManager.getTeleportMarker(pid);
+
+                // 全プレイヤーに通知
+                for (Player p : Bukkit.getOnlinePlayers()) {
+                    p.sendTitle(ChatColor.LIGHT_PURPLE + "闇叉の転生！", ChatColor.DARK_PURPLE + "マーカーへテレポート...", 10, 30, 10);
+                }
+
                 player.teleport(marker);
                 itemManager.clearTeleportMarker(pid);
                 player.playSound(player.getLocation(), Sound.ENTITY_ENDERMAN_TELEPORT, 1f, 1f);
@@ -716,6 +723,11 @@ public final class OniGo extends JavaPlugin implements CommandExecutor, Listener
                 itemManager.setTeleportMarker(pid, player.getLocation());
                 player.playSound(player.getLocation(), Sound.ENTITY_EXPERIENCE_ORB_PICKUP, 1f, 1f);
                 player.sendMessage(ChatColor.LIGHT_PURPLE + "テレポートマーカーを設置した！");
+
+                // 全プレイヤーに通知
+                for (Player p : Bukkit.getOnlinePlayers()) {
+                    p.sendTitle(ChatColor.LIGHT_PURPLE + "闇叉の転生！", ChatColor.DARK_PURPLE + "マーカー設置...", 10, 30, 10);
+                }
             }
 
             itemManager.setAnshaTeleportCooldown(pid);
@@ -765,10 +777,16 @@ public final class OniGo extends JavaPlugin implements CommandExecutor, Listener
                 return;
             }
 
+            // 闇叉「逃亡不可」使用時
             // プレイヤーの後ろにワープ
             Location playerLoc = nearestPlayer.getLocation();
             Vector direction = playerLoc.getDirection().multiply(-1).normalize();
             Location teleportLoc = playerLoc.clone().add(direction.multiply(1.5));
+
+            // 全プレイヤーに通知
+            for (Player p : Bukkit.getOnlinePlayers()) {
+                p.sendTitle(ChatColor.RED + "闇叉の逃亡不可！", ChatColor.DARK_RED + nearestPlayer.getName() + "の背後に出現...", 10, 30, 10);
+            }
 
             player.teleport(teleportLoc);
             player.playSound(player.getLocation(), Sound.ENTITY_ENDERMAN_TELEPORT, 1f, 0.5f);
@@ -887,10 +905,11 @@ public final class OniGo extends JavaPlugin implements CommandExecutor, Listener
                 player.sendMessage(ChatColor.BLUE + "プレイヤー陣営に配属されたよ！");
                 player.closeInventory();
                 gameManager.updateScoreboard();
-            } else if ("鬼陣営".equals(dispName)) {
+            } else             if ("鬼陣営".equals(dispName)) {
                 teamManager.addPlayerToOniTeam(player);
-                player.sendMessage(ChatColor.RED + "鬼陣営に配属されたよ！");
+                player.sendMessage(ChatColor.RED + "鬼陣営に配属されたよ！鬼タイプを選択してください");
                 player.closeInventory();
+                openOniTypeSelectionGUI(player);
                 gameManager.updateScoreboard();
             }
         }
@@ -986,18 +1005,7 @@ public final class OniGo extends JavaPlugin implements CommandExecutor, Listener
 
             if (selectedType != null) {
                 teamManager.setPlayerOniType(player, selectedType);
-                player.sendMessage(ChatColor.GREEN + selectedType.getDisplayName() + "を選択しました！");
-                // 鬼タイプごとのアイテム配布
-                itemManager.distributeOniItems(player, selectedType);
-
-                // 鬼タイプに応じた速度適用
-                applyOniTypeSpeed(player, selectedType);
-
-                // 闇叉なら暗闇効果適用
-                if (selectedType == OniType.ANSHA) {
-                    effectManager.applyAnshaPermaDarkness(player);
-                }
-
+                player.sendMessage(ChatColor.GREEN + selectedType.getDisplayName() + "を選択しました！ゲーム開始時にアイテムが配布されます。");
                 player.closeInventory();
             }
         }

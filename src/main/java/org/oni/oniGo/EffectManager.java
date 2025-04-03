@@ -254,6 +254,8 @@ public class EffectManager {
                 p.addPotionEffect(new PotionEffect(PotionEffectType.getByName("JUMP"), 20 * 2, 128, false, true));
                 p.sendMessage(ChatColor.AQUA + "鬼叉の能力で2秒間動けなくなった！");
             }
+            // 全プレイヤーに通知
+            p.sendTitle(ChatColor.AQUA + "鬼叉の停止！", ChatColor.RED + "プレイヤーが一時停止...", 10, 30, 10);
         }
         player.sendMessage(ChatColor.AQUA + "停止発動！全プレイヤーを2秒間停止させた");
     }
@@ -266,6 +268,11 @@ public class EffectManager {
         }
 
         player.sendMessage(ChatColor.YELLOW + "金棒発動！30秒間一撃必殺");
+
+        // 全プレイヤーに通知
+        for (Player p : Bukkit.getOnlinePlayers()) {
+            p.sendTitle(ChatColor.YELLOW + "鬼叉の金棒！", ChatColor.RED + "30秒間一撃必殺状態...", 10, 30, 10);
+        }
 
         BukkitTask task = new BukkitRunnable() {
             @Override
@@ -375,6 +382,11 @@ public class EffectManager {
     // 月牙の殺月効果
     public void startGetsugaKillMoonEffect(Player player) {
         killMoonActive = true;
+
+        // 全プレイヤーに通知
+        for (Player p : Bukkit.getOnlinePlayers()) {
+            p.sendTitle(ChatColor.DARK_RED + "月牙の殺月！", ChatColor.RED + "30秒間鈍足効果...", 10, 30, 10);
+        }
 
         // 全プレイヤーに鈍足効果
         for (Player p : Bukkit.getOnlinePlayers()) {
