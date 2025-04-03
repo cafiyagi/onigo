@@ -26,6 +26,16 @@ public class EffectManager {
     // Sound constants
     public static final String ONISONG1_SOUND = "minecraft:onisong1";
     public static final String ONISONG2_SOUND = "minecraft:onisong2";
+    public static final String TOSSIN_SOUND   = "minecraft:tossin";
+    public static final String TEISI_SOUND    = "minecraft:teisi";
+    public static final String KANABO_SOUND   = "minecraft:kanabo";
+
+    public static final String ANSYA_SOUND    = "minecraft:ansya";
+    public static final String ANTEN_SOUND    = "minecraft:anten";
+
+
+
+
 
     // Kakure Dama (隠れ玉)
     private Map<UUID, Integer> kakureDamaRemaining = new HashMap<>();
@@ -177,6 +187,26 @@ public class EffectManager {
                 if (!plugin.isGameRunning()) return;
                 for (Player p : Bukkit.getOnlinePlayers()) {
                     if (teamManager.isPlayerInOniTeam(p)) {
+                        // 月牙(GETSUGA)の場合：SPEED効果上昇3を付与
+                        if (teamManager.getPlayerOniType(p) == OniType.GETSUGA) {
+                            // 既にSPEED効果レベル3がない場合は追加
+                            boolean hasSpeedLevel3 = false;
+                            for (PotionEffect effect : p.getActivePotionEffects()) {
+                                if (effect.getType() == PotionEffectType.SPEED && effect.getAmplifier() == 3) {
+                                    hasSpeedLevel3 = true;
+                                    break;
+                                }
+                            }
+                            if (!hasSpeedLevel3) {
+                                p.addPotionEffect(new PotionEffect(PotionEffectType.SPEED, 999999, 1, false, false));
+                            }
+                            continue;
+                        }
+                        // 暗叉(ANSHA)の場合は何も付与しない
+                        if (teamManager.getPlayerOniType(p) == OniType.ANSHA) {
+                            continue;
+                        }
+                        // それ以外の鬼にはSLOW効果を付与
                         if (!p.hasPotionEffect(PotionEffectType.SLOWNESS)) {
                             p.addPotionEffect(new PotionEffect(PotionEffectType.SLOWNESS, 999999, 2, false, false));
                         }
@@ -240,12 +270,21 @@ public class EffectManager {
         }
     }
 
+
     // 鬼叉の突進効果
     public void startKishaDashEffect(Player player) {
-        player.addPotionEffect(new PotionEffect(PotionEffectType.SPEED, 20 * 5, 2, false, true));
+        player.addPotionEffect(new PotionEffect(PotionEffectType.SPEED, 20 * 6, 9, false, true));
         player.sendMessage(ChatColor.GOLD + "突進発動！5秒間速度上昇");
-    }
 
+        // 全プレイヤーに通知
+        for (Player p : Bukkit.getOnlinePlayers()) {
+            p.sendTitle(ChatColor.GOLD + "鬼叉の突進！", ChatColor.YELLOW + "5秒間速度上昇...", 10, 30, 10);
+        }
+        // プレイヤーのいるワールド内の全プレイヤーにTOSSIN_SOUNDを再生
+        for (Player p : player.getWorld().getPlayers()) {
+            p.playSound(p.getLocation(), TOSSIN_SOUND, 1.0f, 1.0f);
+        }
+    }
     // 鬼叉の停止効果
     public void startKishaFreezeEffect(Player player) {
         for (Player p : Bukkit.getOnlinePlayers()) {
@@ -258,6 +297,10 @@ public class EffectManager {
             p.sendTitle(ChatColor.AQUA + "鬼叉の停止！", ChatColor.RED + "プレイヤーが一時停止...", 10, 30, 10);
         }
         player.sendMessage(ChatColor.AQUA + "停止発動！全プレイヤーを2秒間停止させた");
+        // プレイヤーのいるワールド内の全プレイヤーにTEISI_SOUNDを再生
+        for (Player p : player.getWorld().getPlayers()) {
+            p.playSound(p.getLocation(), TEISI_SOUND, 1.0f, 1.0f);
+        }
     }
 
     // 鬼叉の金棒効果
@@ -272,6 +315,11 @@ public class EffectManager {
         // 全プレイヤーに通知
         for (Player p : Bukkit.getOnlinePlayers()) {
             p.sendTitle(ChatColor.YELLOW + "鬼叉の金棒！", ChatColor.RED + "30秒間一撃必殺状態...", 10, 30, 10);
+        }
+
+        // プレイヤーのいるワールド内の全プレイヤーにKANABO_SOUNDを再生
+        for (Player p : player.getWorld().getPlayers()) {
+            p.playSound(p.getLocation(), KANABO_SOUND, 1.0f, 1.0f);
         }
 
         BukkitTask task = new BukkitRunnable() {
@@ -343,7 +391,9 @@ public class EffectManager {
                 playerDarknessTasks.put(pid, task);
             }
         }
-
+        for (Player p : player.getWorld().getPlayers()) {
+            p.playSound(p.getLocation(), ANTEN_SOUND, 1.0f, 1.0f);
+        }
         player.sendMessage(ChatColor.DARK_PURPLE + "暗転発動！10秒間プレイヤーに強い暗闇効果");
 
         // 10秒後に闇叉の暗闇復活

@@ -622,7 +622,7 @@ public class ItemManager {
     // 新しい鬼のクールダウンメソッド
     public boolean isKishaDashOnCooldown(UUID uuid) {
         if (!dashCooldowns.containsKey(uuid)) return false;
-        return (System.currentTimeMillis() - dashCooldowns.get(uuid)) < 30000; // 30秒
+        return (System.currentTimeMillis() - dashCooldowns.get(uuid)) < 20000; // 30秒
     }
 
     public void setKishaDashCooldown(UUID uuid) {

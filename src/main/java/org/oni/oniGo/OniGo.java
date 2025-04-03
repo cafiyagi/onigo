@@ -30,7 +30,15 @@ import org.bukkit.util.Vector;
 
 import java.util.*;
 
+
+
+
 public final class OniGo extends JavaPlugin implements CommandExecutor, Listener {
+
+    public static final String TUKI_SOUND     = "minecraft:tuki";
+    public static final String MIKADUKI_SOUND = "minecraft:mikaduki";
+    public static final String SATSUKI_SOUND  = "minecraft:satsuki";
+
 
     // Managers
     private ConfigManager configManager;
@@ -812,6 +820,7 @@ public final class OniGo extends JavaPlugin implements CommandExecutor, Listener
                 return;
             }
 
+
             UUID pid = player.getUniqueId();
             // 使用回数チェック
             int usedCount = itemManager.getGetsugaMoonSlashCount(pid);
@@ -842,6 +851,10 @@ public final class OniGo extends JavaPlugin implements CommandExecutor, Listener
                     teamManager.getPlayerOniType(player) != OniType.GETSUGA) {
                 player.sendMessage(ChatColor.RED + "月牙のみ使用可能だよ！");
                 return;
+            }
+            // プレイヤーのいるワールド内の全プレイヤーに再生
+            for (Player p : player.getWorld().getPlayers()) {
+                p.playSound(p.getLocation(), MIKADUKI_SOUND, 1.0f, 1.0f);
             }
 
             UUID pid = player.getUniqueId();
@@ -875,6 +888,9 @@ public final class OniGo extends JavaPlugin implements CommandExecutor, Listener
                 int remain = itemManager.getGetsugaKillMoonRemainingCooldown(pid);
                 player.sendMessage(ChatColor.RED + "クールダウン中: 残り" + remain + "秒");
                 return;
+            }
+            for (Player p : player.getWorld().getPlayers()) {
+                p.playSound(p.getLocation(), SATSUKI_SOUND, 1.0f, 1.0f);
             }
 
             effectManager.startGetsugaKillMoonEffect(player);
@@ -1385,7 +1401,7 @@ public final class OniGo extends JavaPlugin implements CommandExecutor, Listener
                 speedLevel = 1; // 1.2倍速
                 break;
             case GETSUGA:
-                speedLevel = 1; // 1.5倍速
+                speedLevel = 3; // 1.5倍速
                 break;
             default:
                 return; // YASHA は標準速度
