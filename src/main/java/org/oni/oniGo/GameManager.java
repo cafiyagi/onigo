@@ -692,6 +692,11 @@ public class GameManager {
             return;
         }
 
+        // 全プレイヤーに通知
+        for (Player p : Bukkit.getOnlinePlayers()) {
+            p.sendTitle(ChatColor.RED + "チェスト探知！", ChatColor.GOLD + "プレイヤー付近のチェストを探知中...", 10, 30, 10);
+        }
+
         // 最寄りプレイヤーを探す
         Player nearestPlayer = null;
         double minDist = Double.MAX_VALUE;
@@ -762,6 +767,11 @@ public class GameManager {
             int remain = itemManager.getChestTeleporterRemainingCooldown(oniUuid);
             oniPlayer.sendMessage(ChatColor.RED + "クールダウン中: 残り" + remain + "秒");
             return;
+        }
+
+        // 全プレイヤーに通知
+        for (Player p : Bukkit.getOnlinePlayers()) {
+            p.sendTitle(ChatColor.RED + "チェストワープ！", ChatColor.GOLD + "鬼がチェスト付近にワープ...", 10, 30, 10);
         }
 
         Player nearestPlayer = null;
@@ -1132,6 +1142,12 @@ public class GameManager {
         if (opened > 0) {
             // 既に開けたチェストをカウントダウン
             playerOpenedCountChests.put(targetId, opened - 1);
+
+            // 全プレイヤーに通知
+            for (Player p : Bukkit.getOnlinePlayers()) {
+                p.sendTitle(ChatColor.BLUE + "月牙の月切り！", ChatColor.AQUA + target.getName() + "のチェスト進行度が減少", 10, 30, 10);
+            }
+
             target.sendMessage(ChatColor.RED + "月牙の月切りによりカウントチェスト進行度が1つ減った！");
             player.sendMessage(ChatColor.BLUE + target.getName() + "のカウントチェスト進行度を1つ減らした！");
 
