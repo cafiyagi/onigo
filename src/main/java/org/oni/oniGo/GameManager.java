@@ -250,7 +250,12 @@ public class GameManager {
         // 月牙のチェスト定期通知を開始
         effectManager.startGetsugaChestDetection();
 
-        Bukkit.broadcastMessage(ChatColor.GREEN + "ゲームスタート！残り時間：" + remainingTime + "秒");
+        
+        for (Player p : Bukkit.getOnlinePlayers()) {
+            if (teamManager.isPlayerInPlayerTeam(p)) {
+                p.getInventory().addItem(new ItemStack(Material.COOKED_PORKCHOP, 64));
+            }
+        }
     }
 
     /**

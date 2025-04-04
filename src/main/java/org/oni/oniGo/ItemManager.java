@@ -26,9 +26,9 @@ public class ItemManager {
     private Map<UUID, Integer> droneUsages = new HashMap<>();
 
     // クールダウン時間
-    private static final long DETECTOR_COOLDOWN_MS = 60000;       // 60秒
-    private static final long TELEPORTER_COOLDOWN_MS = 120000;    // 120秒
-    private static final long PLAYER_ESCAPE_COOLDOWN_MS = 60000;  // 60秒
+    private static final long DETECTOR_COOLDOWN_MS = 15000;       // 60秒
+    private static final long TELEPORTER_COOLDOWN_MS = 30000;    // 120秒
+    private static final long PLAYER_ESCAPE_COOLDOWN_MS = 90000;  // 60秒
 
     // 新しい鬼のアイテム用クールダウン管理
     private Map<UUID, Long> dashCooldowns = new HashMap<>(); // 鬼叉の突進

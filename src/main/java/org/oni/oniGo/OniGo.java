@@ -852,10 +852,6 @@ public final class OniGo extends JavaPlugin implements CommandExecutor, Listener
                 player.sendMessage(ChatColor.RED + "月牙のみ使用可能だよ！");
                 return;
             }
-            // プレイヤーのいるワールド内の全プレイヤーに再生
-            for (Player p : player.getWorld().getPlayers()) {
-                p.playSound(p.getLocation(), MIKADUKI_SOUND, 1.0f, 1.0f);
-            }
 
             UUID pid = player.getUniqueId();
             if (itemManager.isGetsugaCrescentOnCooldown(pid)) {
@@ -863,6 +859,11 @@ public final class OniGo extends JavaPlugin implements CommandExecutor, Listener
                 player.sendMessage(ChatColor.RED + "クールダウン中: 残り" + remain + "秒");
                 return;
             }
+            // プレイヤーのいるワールド内の全プレイヤーに再生
+            for (Player p : player.getWorld().getPlayers()) {
+                p.playSound(p.getLocation(), MIKADUKI_SOUND, 1.0f, 1.0f);
+            }
+
 
             // 全プレイヤーをランダムなチェスト付近にワープ
             gameManager.teleportAllPlayersToRandomChests();
