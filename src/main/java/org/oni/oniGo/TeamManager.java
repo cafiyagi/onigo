@@ -18,7 +18,7 @@ public class TeamManager {
     private Set<UUID> escapedPlayers = new HashSet<>();
     private int initialPlayerCount = 0;
 
-    // 出口ドア開けたプレイヤー（不要なら削除してOKだが、とりあえず保持）
+    // 出口ドア開けたプレイヤー
     private Set<UUID> doorOpenedPlayers = new HashSet<>();
 
     // 鬼タイプ管理
@@ -111,14 +111,56 @@ public class TeamManager {
     }
 
     public void setupOniStart(Player oniPlayer) {
-        oniTeam.addEntry(oniPlayer.getName());
+        // 全員を一旦プレイヤーチームに
         for (Player p : Bukkit.getOnlinePlayers()) {
-            if (!p.getName().equals(oniPlayer.getName())) {
-                if (!playerTeam.hasEntry(p.getName()) && !oniTeam.hasEntry(p.getName())) {
-                    playerTeam.addEntry(p.getName());
-                }
+            if (playerTeam.hasEntry(p.getName()) || oniTeam.hasEntry(p.getName())) {
+                playerTeam.removeEntry(p.getName());
+                oniTeam.removeEntry(p.getName());
+            }
+            playerTeam.addEntry(p.getName());
+        }
+
+        // 指定した1人だけを鬼チームに
+        playerTeam.removeEntry(oniPlayer.getName());
+        oniTeam.addEntry(oniPlayer.getName());
+    }
+
+    // 鬼陣営が1人だけになるように調整
+    public void ensureSingleOni() {
+        // 現在の鬼プレイヤーを取得
+        List<Player> oniPlayers = new ArrayList<>();
+        for (Player p : Bukkit.getOnlinePlayers()) {
+            if (oniTeam.hasEntry(p.getName())) {
+                oniPlayers.add(p);
             }
         }
+
+        // 鬼が複数いる場合、1人だけを鬼に残し、他はプレイヤーに移動
+        if (oniPlayers.size() > 1) {
+            // 最初の1人を鬼に残す
+            Player keptOniPlayer = oniPlayers.get(0);
+
+            // 残りをプレイヤーに移動
+            for (int i = 1; i < oniPlayers.size(); i++) {
+                Player p = oniPlayers.get(i);
+                oniTeam.removeEntry(p.getName());
+                playerTeam.addEntry(p.getName());
+                p.sendMessage(ChatColor.YELLOW + "鬼陣営は1人のみのため、プレイヤー陣営に移動しました。");
+            }
+
+            Bukkit.broadcastMessage(ChatColor.GOLD + keptOniPlayer.getName() + "が鬼に選ばれました！");
+        }
+    }
+
+    // 鬼陣営のプレイヤー数を取得
+    public int countOniTeamPlayers() {
+        int count = 0;
+        for (Player p : Bukkit.getOnlinePlayers()) {
+            if (oniTeam.hasEntry(p.getName())) {
+                count++;
+            }
+        }
+        return count;
     }
 
     public boolean areAnyPlayersUnassigned() {
@@ -177,11 +219,20 @@ public class TeamManager {
         return survivors;
     }
 
+    /**
+     * スコアボード更新 - 新しいバージョン
+     */
     public void updateScoreboard(int remainingTime,
                                  Map<UUID, Integer> kakureDamaRemaining,
                                  Map<UUID, Integer> playerOpenedCountChests,
                                  Map<UUID, Integer> playerRequiredCountChests,
-                                 int remainingChests) {
+                                 Map<UUID, Integer> playerLives,
+                                 Map<UUID, Long> playerEscapeCooldowns,
+                                 Map<UUID, Integer> escapeCooldownTimes) {
+
+        // 鬼アイテムのクールダウンを取得
+        Map<UUID, Map<String, Integer>> oniItemCooldowns = plugin.getItemManager().getOniItemCooldowns();
+
         for (Player p : Bukkit.getOnlinePlayers()) {
             Scoreboard sb = scoreboard;
             Objective obj = objective;
@@ -193,41 +244,96 @@ public class TeamManager {
 
             // 残り時間
             Score timeScore = obj.getScore(ChatColor.YELLOW + "残り時間: " + remainingTime + "秒");
-            timeScore.setScore(15);
-
-            // 生存者数
-            int surv = countSurvivingPlayers();
-            Score survScore = obj.getScore(ChatColor.GREEN + "生存者: " + surv + "人");
-            survScore.setScore(14);
-
-            // 脱出者数
-            Score escapedScore = obj.getScore(ChatColor.AQUA + "脱出者: " + escapedPlayers.size() + "人");
-            escapedScore.setScore(13);
-
-            // **両陣営とも「残りチェスト数」を表示**
-            Score chestRemainScore = obj.getScore(ChatColor.GOLD + "残りチェスト: " + remainingChests + "個");
-            chestRemainScore.setScore(12);
+            timeScore.setScore(20);
 
             if (isPlayerInPlayerTeam(p)) {
-                // 個別：カウントチェスト進捗
+                // プレイヤー陣営表示
                 UUID pid = p.getUniqueId();
-                int opened = playerOpenedCountChests.getOrDefault(pid, 0);
-                int req = playerRequiredCountChests.getOrDefault(pid, 0);
 
-                Score countChestScore = obj.getScore(ChatColor.GOLD + "チェスト進捗: " + opened + "/" + req);
-                countChestScore.setScore(11);
+                // 残機
+                int lives = playerLives.getOrDefault(pid, 0);
+                Score livesScore = obj.getScore(ChatColor.GREEN + "残機: " + lives);
+                livesScore.setScore(18);
+
+                // 緊急脱出アイテムのクールタイム
+                int escapeCooldown = escapeCooldownTimes.getOrDefault(pid, 0);
+                if (escapeCooldown > 0) {
+                    Score escapeCooldownScore = obj.getScore(ChatColor.RED + "緊急脱出CD: " + escapeCooldown + "秒");
+                    escapeCooldownScore.setScore(17);
+                }
 
                 // 隠れ玉残秒
                 int kdRemain = kakureDamaRemaining.getOrDefault(pid, 0);
-                Score kdScore = obj.getScore(ChatColor.AQUA + "隠れ玉: " + kdRemain + "秒");
-                kdScore.setScore(10);
+                if (kdRemain > 0) {
+                    Score kdScore = obj.getScore(ChatColor.AQUA + "隠れ玉: " + kdRemain + "秒");
+                    kdScore.setScore(16);
+                }
+
+                // カウントチェスト進捗
+                int opened = playerOpenedCountChests.getOrDefault(pid, 0);
+                int req = playerRequiredCountChests.getOrDefault(pid, 0);
+                Score countChestScore = obj.getScore(ChatColor.GOLD + "チェスト進捗: " + opened + "/" + req);
+                countChestScore.setScore(15);
+
+                // 全チェスト数
+                int totalCountChests = plugin.getConfigManager().getTotalCountChests();
+                Score totalChestsScore = obj.getScore(ChatColor.GOLD + "全チェスト数: " + totalCountChests);
+                totalChestsScore.setScore(14);
+
+                // 生存者数
+                int surv = countSurvivingPlayers();
+                Score survScore = obj.getScore(ChatColor.GREEN + "生存者: " + surv + "人");
+                survScore.setScore(12);
+
+                // 脱出者数
+                Score escapedScore = obj.getScore(ChatColor.AQUA + "脱出者: " + escapedPlayers.size() + "人");
+                escapedScore.setScore(11);
+            } else if (isPlayerInOniTeam(p)) {
+                // 鬼陣営表示
+                UUID pid = p.getUniqueId();
+
+                // アイテムのクールダウン表示
+                Map<String, Integer> cooldowns = oniItemCooldowns.getOrDefault(pid, new HashMap<>());
+                int scorePosition = 18;
+
+                for (Map.Entry<String, Integer> entry : cooldowns.entrySet()) {
+                    String itemName = entry.getKey();
+                    int cooldown = entry.getValue();
+
+                    if (cooldown == -1) {
+                        // 使用済みアイテム
+                        Score cdScore = obj.getScore(ChatColor.RED + itemName + ": " + "使用済み");
+                        cdScore.setScore(scorePosition--);
+                    } else if (cooldown > 0) {
+                        // クールダウン中
+                        Score cdScore = obj.getScore(ChatColor.RED + itemName + "CD: " + cooldown + "秒");
+                        cdScore.setScore(scorePosition--);
+                    }
+
+                    // スコア位置が10以下になったら中断（表示が多すぎる場合）
+                    if (scorePosition <= 13) break;
+                }
+
+                // 生存者数
+                int surv = countSurvivingPlayers();
+                Score survScore = obj.getScore(ChatColor.GREEN + "生存者: " + surv + "人");
+                survScore.setScore(12);
+
+                // 脱出者数
+                Score escapedScore = obj.getScore(ChatColor.AQUA + "脱出者: " + escapedPlayers.size() + "人");
+                escapedScore.setScore(11);
+
+                // 全チェスト数
+                int totalCountChests = plugin.getConfigManager().getTotalCountChests();
+                Score totalChestsScore = obj.getScore(ChatColor.GOLD + "全チェスト数: " + totalCountChests);
+                totalChestsScore.setScore(10);
             }
 
             // チーム人数
             Score oniScore = obj.getScore(ChatColor.RED + "鬼チーム: " + oniTeam.getSize() + "人");
-            oniScore.setScore(6);
+            oniScore.setScore(7);
             Score plScore = obj.getScore(ChatColor.BLUE + "プレイヤー: " + playerTeam.getSize() + "人");
-            plScore.setScore(5);
+            plScore.setScore(6);
 
             // 勝利条件
             Score line = obj.getScore(ChatColor.LIGHT_PURPLE + "-------------");
@@ -237,14 +343,6 @@ public class TeamManager {
 
             p.setScoreboard(sb);
         }
-    }
-
-    // オーバーロード（古い呼び出し用）
-    public void updateScoreboard(int remainingTime,
-                                 Map<UUID, Integer> kakureDamaRemaining,
-                                 Map<UUID, Integer> playerOpenedCountChests,
-                                 Map<UUID, Integer> playerRequiredCountChests) {
-        updateScoreboard(remainingTime, kakureDamaRemaining, playerOpenedCountChests, playerRequiredCountChests, 0);
     }
 
     public String getWinMessage() {

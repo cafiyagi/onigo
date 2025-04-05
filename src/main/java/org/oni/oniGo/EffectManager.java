@@ -29,13 +29,9 @@ public class EffectManager {
     public static final String TOSSIN_SOUND   = "minecraft:tossin";
     public static final String TEISI_SOUND    = "minecraft:teisi";
     public static final String KANABO_SOUND   = "minecraft:kanabo";
-
     public static final String ANSYA_SOUND    = "minecraft:ansya";
     public static final String ANTEN_SOUND    = "minecraft:anten";
-
-
-
-
+    public static final String TUKI_SOUND     = "minecraft:tuki";
 
     // Kakure Dama (隠れ玉)
     private Map<UUID, Integer> kakureDamaRemaining = new HashMap<>();
@@ -285,18 +281,20 @@ public class EffectManager {
             p.playSound(p.getLocation(), TOSSIN_SOUND, 1.0f, 1.0f);
         }
     }
+
     // 鬼叉の停止効果
     public void startKishaFreezeEffect(Player player) {
         for (Player p : Bukkit.getOnlinePlayers()) {
             if (teamManager.isPlayerInPlayerTeam(p) && p.getGameMode() != GameMode.SPECTATOR) {
-                p.addPotionEffect(new PotionEffect(PotionEffectType.getByName("SLOW"), 20 * 2, 255, false, true));
-                p.addPotionEffect(new PotionEffect(PotionEffectType.getByName("JUMP"), 20 * 2, 128, false, true));
-                p.sendMessage(ChatColor.AQUA + "鬼叉の能力で2秒間動けなくなった！");
+                // 効果時間を2秒から3秒に変更
+                p.addPotionEffect(new PotionEffect(PotionEffectType.getByName("SLOW"), 20 * 3, 255, false, true));
+                p.addPotionEffect(new PotionEffect(PotionEffectType.getByName("JUMP"), 20 * 3, 128, false, true));
+                p.sendMessage(ChatColor.AQUA + "鬼叉の能力で3秒間動けなくなった！");
             }
             // 全プレイヤーに通知
             p.sendTitle(ChatColor.AQUA + "鬼叉の停止！", ChatColor.RED + "プレイヤーが一時停止...", 10, 30, 10);
         }
-        player.sendMessage(ChatColor.AQUA + "停止発動！全プレイヤーを2秒間停止させた");
+        player.sendMessage(ChatColor.AQUA + "停止発動！全プレイヤーを3秒間停止させた");
         // プレイヤーのいるワールド内の全プレイヤーにTEISI_SOUNDを再生
         for (Player p : player.getWorld().getPlayers()) {
             p.playSound(p.getLocation(), TEISI_SOUND, 1.0f, 1.0f);
@@ -426,7 +424,8 @@ public class EffectManager {
                     }
                 }
             }
-        }.runTaskTimer(plugin, 20 * 30, 20 * 30); // 30秒ごとに実行
+            // クールタイムを30秒から60秒に変更
+        }.runTaskTimer(plugin, 20 * 30, 20 * 60); // 60秒ごとに実行
     }
 
     // 月牙の殺月効果
@@ -435,26 +434,26 @@ public class EffectManager {
 
         // 全プレイヤーに通知
         for (Player p : Bukkit.getOnlinePlayers()) {
-            p.sendTitle(ChatColor.DARK_RED + "月牙の殺月！", ChatColor.RED + "30秒間鈍足効果...", 10, 30, 10);
+            p.sendTitle(ChatColor.DARK_RED + "月牙の殺月！", ChatColor.RED + "10秒間鈍足効果...", 10, 30, 10);
         }
 
-        // 全プレイヤーに鈍足効果
+        // 全プレイヤーに鈍足効果（効果時間を30秒から10秒に変更）
         for (Player p : Bukkit.getOnlinePlayers()) {
             if (teamManager.isPlayerInPlayerTeam(p) && p.getGameMode() != GameMode.SPECTATOR) {
-                p.addPotionEffect(new PotionEffect(PotionEffectType.getByName("SLOW"), 20 * 30, 1, false, true));
-                p.sendMessage(ChatColor.DARK_RED + "月牙の殺月！30秒間鈍足になった");
+                p.addPotionEffect(new PotionEffect(PotionEffectType.getByName("SLOW"), 20 * 10, 1, false, true));
+                p.sendMessage(ChatColor.DARK_RED + "月牙の殺月！10秒間鈍足になった");
             }
         }
 
-        player.sendMessage(ChatColor.DARK_RED + "殺月発動！30秒間プレイヤーを鈍足化（誰かを殴ると解除）");
+        player.sendMessage(ChatColor.DARK_RED + "殺月発動！10秒間プレイヤーを鈍足化（誰かを殴ると解除）");
 
-        // 30秒後に解除
+        // 10秒後に解除（30秒から変更）
         BukkitTask task = new BukkitRunnable() {
             @Override
             public void run() {
                 stopGetsugaKillMoonEffect();
             }
-        }.runTaskLater(plugin, 20 * 30);
+        }.runTaskLater(plugin, 20 * 10);
 
         UUID pid = player.getUniqueId();
         getsugaKillMoonTasks.put(pid, task);
@@ -474,6 +473,17 @@ public class EffectManager {
             task.cancel();
         }
         getsugaKillMoonTasks.clear();
+    }
+
+    // 月牙の月切り後の一時停止効果（3秒間）
+    public void startGetsugaMoonSlashStun(Player player) {
+        player.addPotionEffect(new PotionEffect(PotionEffectType.getByName("SLOW"), 20 * 3, 255, false, true));
+        player.addPotionEffect(new PotionEffect(PotionEffectType.getByName("JUMP"), 20 * 3, 128, false, true));
+        player.sendMessage(ChatColor.RED + "月切り後の反動で3秒間動けない！");
+
+        for (Player p : player.getWorld().getPlayers()) {
+            p.playSound(p.getLocation(), TUKI_SOUND, 1.0f, 1.0f);
+        }
     }
 
     // 殺月効果中かどうか

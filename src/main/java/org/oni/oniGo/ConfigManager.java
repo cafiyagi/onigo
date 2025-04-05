@@ -17,7 +17,8 @@ public class ConfigManager {
     private Map<String, Boolean> countChestOpened = new HashMap<>();
 
     private Location doorLocation;       // メインドア
-    private Location exitDoorLocation;   // 出口ドア
+    // 出口ドアを複数対応に変更
+    private Map<String, Location> exitDoorLocations = new HashMap<>();
     private Location escapeLocation;
     private Location initialSpawnLocation;
 
@@ -73,13 +74,24 @@ public class ConfigManager {
             doorLocation = new Location(Bukkit.getWorld(worldName), x, y, z);
         }
 
-        // exit door
-        if (config.isConfigurationSection("exit_door")) {
+        // exit doors (複数対応)
+        if (config.isConfigurationSection("exit_doors")) {
+            for (String doorName : config.getConfigurationSection("exit_doors").getKeys(false)) {
+                double x = config.getDouble("exit_doors." + doorName + ".x");
+                double y = config.getDouble("exit_doors." + doorName + ".y");
+                double z = config.getDouble("exit_doors." + doorName + ".z");
+                String worldName = config.getString("exit_doors." + doorName + ".world");
+                Location loc = new Location(Bukkit.getWorld(worldName), x, y, z);
+                exitDoorLocations.put(doorName, loc);
+            }
+        } else if (config.isConfigurationSection("exit_door")) {
+            // 後方互換性のため、古い設定が存在する場合は変換
             double x = config.getDouble("exit_door.x");
             double y = config.getDouble("exit_door.y");
             double z = config.getDouble("exit_door.z");
             String worldName = config.getString("exit_door.world");
-            exitDoorLocation = new Location(Bukkit.getWorld(worldName), x, y, z);
+            Location loc = new Location(Bukkit.getWorld(worldName), x, y, z);
+            exitDoorLocations.put("exit_door1", loc);
         }
 
         // escape
@@ -133,11 +145,16 @@ public class ConfigManager {
             config.set("door.world", doorLocation.getWorld().getName());
         }
 
-        if (exitDoorLocation != null) {
-            config.set("exit_door.x", exitDoorLocation.getX());
-            config.set("exit_door.y", exitDoorLocation.getY());
-            config.set("exit_door.z", exitDoorLocation.getZ());
-            config.set("exit_door.world", exitDoorLocation.getWorld().getName());
+        // 出口ドア保存（複数対応）
+        config.set("exit_door", null); // 古いフォーマットの保存を削除
+        config.set("exit_doors", null);
+        for (Map.Entry<String, Location> entry : exitDoorLocations.entrySet()) {
+            String doorName = entry.getKey();
+            Location loc = entry.getValue();
+            config.set("exit_doors." + doorName + ".x", loc.getX());
+            config.set("exit_doors." + doorName + ".y", loc.getY());
+            config.set("exit_doors." + doorName + ".z", loc.getZ());
+            config.set("exit_doors." + doorName + ".world", loc.getWorld().getName());
         }
 
         config.set("escape.x", escapeLocation.getX());
@@ -170,9 +187,15 @@ public class ConfigManager {
         saveConfig();
     }
 
-    public void registerExitDoor(Location location) {
-        exitDoorLocation = location;
+    // 出口ドア登録（名前付き）
+    public void registerExitDoor(String name, Location location) {
+        exitDoorLocations.put(name, location);
         saveConfig();
+    }
+
+    // 後方互換性のための従来のメソッド
+    public void registerExitDoor(Location location) {
+        registerExitDoor("exit_door1", location);
     }
 
     public void setChestOpened(String name, boolean opened) {
@@ -266,8 +289,18 @@ public class ConfigManager {
         return doorLocation;
     }
 
+    // 出口ドア取得メソッド（複数対応）
+    public Map<String, Location> getExitDoorLocations() {
+        return exitDoorLocations;
+    }
+
+    // 後方互換性のための従来のメソッド
     public Location getExitDoorLocation() {
-        return exitDoorLocation;
+        if (exitDoorLocations.isEmpty()) {
+            return null;
+        }
+        // 最初の出口ドアを返す
+        return exitDoorLocations.values().iterator().next();
     }
 
     public Location getEscapeLocation() {
@@ -281,4 +314,38 @@ public class ConfigManager {
     public int getRequiredCountChests() {
         return requiredCountChests;
     }
+
+    // カウントチェストの再オープンを許可するためチェスト状態をリセット
+    public void resetCountChestForPlayer(String chestName) {
+        if (countChestOpened.containsKey(chestName)) {
+            countChestOpened.put(chestName, false);
+        }
+    }
+
+    /**
+     * カウントチェストを削除
+     */
+    public boolean unregisterCountChest(String name) {
+        if (countChestLocations.containsKey(name)) {
+            countChestLocations.remove(name);
+            countChestOpened.remove(name);
+            saveConfig();
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * 通常チェストを削除
+     */
+    public boolean unregisterChest(String name) {
+        if (chestLocations.containsKey(name)) {
+            chestLocations.remove(name);
+            chestOpened.remove(name);
+            saveConfig();
+            return true;
+        }
+        return false;
+    }
 }
+

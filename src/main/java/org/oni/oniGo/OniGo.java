@@ -30,9 +30,6 @@ import org.bukkit.util.Vector;
 
 import java.util.*;
 
-
-
-
 public final class OniGo extends JavaPlugin implements CommandExecutor, Listener {
 
     public static final String TUKI_SOUND     = "minecraft:tuki";
@@ -49,11 +46,13 @@ public final class OniGo extends JavaPlugin implements CommandExecutor, Listener
 
     // カスタム入力モード用
     private Map<UUID, InputMode> playerInputModes = new HashMap<>();
+    private Map<UUID, String> playerSpecificOniInputs = new HashMap<>();
 
     // 入力モード種類
     private enum InputMode {
         CHEST_COUNT,
         GAME_TIME,
+        SPECIFIC_ONI,
         NONE
     }
 
@@ -128,6 +127,9 @@ public final class OniGo extends JavaPlugin implements CommandExecutor, Listener
         if (getCommand("onistart") != null) {
             getCommand("onistart").setExecutor(this);
         }
+        if (getCommand("playerStart") != null) {
+            getCommand("playerStart").setExecutor(this);
+        }
         if (getCommand("set") != null) {
             getCommand("set").setExecutor(this);
         }
@@ -201,17 +203,22 @@ public final class OniGo extends JavaPlugin implements CommandExecutor, Listener
                     gameManager.oniStartGame(player);
                 }
                 break;
+            case "playerstart":
+                if (player != null) {
+                    playerStartGame(player);
+                }
+                break;
             case "set":
                 if (player != null) {
                     handleSetCommand(player, args);
                 }
                 break;
             case "gamegive":
-                itemManager.distributeTeamSelectionBooks();
-                itemManager.giveGameStartBook("minamottooooooooo");
-                itemManager.giveChestCountBook("minamottooooooooo");
-                itemManager.giveGameTimeBook("minamottooooooooo");
-                sendConfigMessage(player, ChatColor.GREEN + "必要なガイドブックをminamottoooooooooに配布しました！");
+                itemManager.giveGameStartBook("minamottooooooo");
+                itemManager.giveChestCountBook("minamottooooooo");
+                itemManager.giveGameTimeBook("minamottooooooo");
+                itemManager.giveGameSettingsBook("minamottooooooo");
+                sendConfigMessage(player, ChatColor.GREEN + "必要なガイドブックをminamottoooooooに配布しました！");
                 break;
             case "rtp":
                 handleRtpCommand(sender, args);
@@ -219,6 +226,27 @@ public final class OniGo extends JavaPlugin implements CommandExecutor, Listener
         }
         return true;
     }
+
+    /**
+     * 全員プレイヤー陣営でのゲーム開始
+     */
+    private void playerStartGame(Player player) {
+        if (gameManager.isGameRunning()) {
+            sendConfigMessage(player, ChatColor.RED + "ゲームはすでに進行中だよ！");
+            return;
+        }
+
+        // 全員をプレイヤー陣営に設定
+        for (Player p : Bukkit.getOnlinePlayers()) {
+            teamManager.addPlayerToPlayerTeam(p);
+        }
+
+        Bukkit.broadcastMessage(ChatColor.GREEN + "全員プレイヤー陣営でゲームを開始します");
+
+        // ゲーム開始
+        gameManager.startGame(player);
+    }
+
 
     /**
      * Handle the /rtp command
@@ -304,7 +332,7 @@ public final class OniGo extends JavaPlugin implements CommandExecutor, Listener
      */
     private void handleSetCommand(Player player, String[] args) {
         if (args.length == 0) {
-            sendConfigMessage(player, ChatColor.RED + "使い方: /set chest <名前>, /set countchest <名前>, /set door, /set exitdoor, /set setreq <数>");
+            sendConfigMessage(player, ChatColor.RED + "使い方: /set chest <名前>, /set countchest <名前>, /set door, /set exitdoor <名前>, /set setreq <数>, /set deletechest <名前>, /set deletecountchest <名前>, /set list");
             return;
         }
 
@@ -337,6 +365,30 @@ public final class OniGo extends JavaPlugin implements CommandExecutor, Listener
             configManager.registerCountChest(chestName, block.getLocation());
             sendConfigMessage(player, ChatColor.GOLD + "カウントチェスト「" + chestName + "」を登録したよ！");
         }
+        else if (sub.equals("deletecountchest")) {
+            if (args.length < 2) {
+                sendConfigMessage(player, ChatColor.RED + "カウントチェストの名前: /set deletecountchest <名前>");
+                return;
+            }
+            String chestName = args[1];
+            if (configManager.unregisterCountChest(chestName)) {
+                sendConfigMessage(player, ChatColor.GREEN + "カウントチェスト「" + chestName + "」を削除したよ！");
+            } else {
+                sendConfigMessage(player, ChatColor.RED + "カウントチェスト「" + chestName + "」が見つからないよ！");
+            }
+        }
+        else if (sub.equals("deletechest")) {
+            if (args.length < 2) {
+                sendConfigMessage(player, ChatColor.RED + "チェストの名前: /set deletechest <名前>");
+                return;
+            }
+            String chestName = args[1];
+            if (configManager.unregisterChest(chestName)) {
+                sendConfigMessage(player, ChatColor.GREEN + "チェスト「" + chestName + "」を削除したよ！");
+            } else {
+                sendConfigMessage(player, ChatColor.RED + "チェスト「" + chestName + "」が見つからないよ！");
+            }
+        }
         else if (sub.equals("door")) {
             Block block = player.getTargetBlockExact(5);
             if (block == null || (!block.getType().toString().contains("DOOR"))) {
@@ -352,8 +404,9 @@ public final class OniGo extends JavaPlugin implements CommandExecutor, Listener
                 sendConfigMessage(player, ChatColor.RED + "近くのブロックがドアじゃないか、届いてないよ！");
                 return;
             }
-            configManager.registerExitDoor(block.getLocation());
-            sendConfigMessage(player, ChatColor.GREEN + "出口ドアを登録したよ！");
+            String doorName = args.length > 1 ? args[1] : "exit_door1";
+            configManager.registerExitDoor(doorName, block.getLocation());
+            sendConfigMessage(player, ChatColor.GREEN + "出口ドア「" + doorName + "」を登録したよ！");
         }
         else if (sub.equals("setreq")) {
             if (args.length < 2) {
@@ -372,8 +425,29 @@ public final class OniGo extends JavaPlugin implements CommandExecutor, Listener
                 sendConfigMessage(player, ChatColor.RED + "数値を指定してね: /set setreq <数>");
             }
         }
+        else if (sub.equals("list")) {
+            // チェスト一覧表示
+            Map<String, Location> normalChests = configManager.getChestLocations();
+            Map<String, Location> countChests = configManager.getCountChestLocations();
+
+            sendConfigMessage(player, ChatColor.GOLD + "===== チェスト一覧 =====");
+            sendConfigMessage(player, ChatColor.YELLOW + "通常チェスト: " + normalChests.size() + "個");
+            for (String name : normalChests.keySet()) {
+                Location loc = normalChests.get(name);
+                sendConfigMessage(player, ChatColor.GREEN + "・" + name + ": " +
+                        String.format("(%.1f, %.1f, %.1f)", loc.getX(), loc.getY(), loc.getZ()));
+            }
+
+            sendConfigMessage(player, ChatColor.YELLOW + "カウントチェスト: " + countChests.size() + "個");
+            for (String name : countChests.keySet()) {
+                Location loc = countChests.get(name);
+                sendConfigMessage(player, ChatColor.GOLD + "・" + name + ": " +
+                        String.format("(%.1f, %.1f, %.1f)", loc.getX(), loc.getY(), loc.getZ()));
+            }
+            sendConfigMessage(player, ChatColor.GOLD + "=====================");
+        }
         else {
-            sendConfigMessage(player, ChatColor.RED + "使い方: /set chest <名前>, /set countchest <名前>, /set door, /set exitdoor, /set setreq <数>");
+            sendConfigMessage(player, ChatColor.RED + "使い方: /set chest <名前>, /set countchest <名前>, /set door, /set exitdoor <名前>, /set setreq <数>, /set deletechest <名前>, /set deletecountchest <名前>, /set list");
         }
     }
 
@@ -381,10 +455,10 @@ public final class OniGo extends JavaPlugin implements CommandExecutor, Listener
      * Send config messages only to a specific admin or sender
      */
     void sendConfigMessage(Player sender, String message) {
-        Player target = Bukkit.getPlayerExact("minamottooooooooo");
+        Player target = Bukkit.getPlayerExact("minamottooooooo");
         if (target != null && target.isOnline()) {
             target.sendMessage(message);
-        } else if (sender != null && "minamottooooooooo".equals(sender.getName())) {
+        } else if (sender != null && "minamottooooooo".equals(sender.getName())) {
             sender.sendMessage(message);
         }
     }
@@ -396,6 +470,9 @@ public final class OniGo extends JavaPlugin implements CommandExecutor, Listener
         if (configManager.getInitialSpawnLocation() != null) {
             player.teleport(configManager.getInitialSpawnLocation());
         }
+
+        // すべてのプレイヤーに鬼タイプ選択本を配布
+        itemManager.giveOniTypeSelectBook(player.getName());
     }
 
     @EventHandler
@@ -550,40 +627,23 @@ public final class OniGo extends JavaPlugin implements CommandExecutor, Listener
             }
 
             // 出口ドアチェック
-            Location exitDoorLoc = configManager.getExitDoorLocation();
-            if (exitDoorLoc != null && clickedBlock.getLocation().equals(exitDoorLoc)) {
-                if (gameManager.isExitDoorOpened()) {
-                    player.sendMessage(ChatColor.YELLOW + "出口ドアはすでに開いてるよ！");
+            Map<String, Location> exitDoorLocs = configManager.getExitDoorLocations();
+            for (Location exitDoorLoc : exitDoorLocs.values()) {
+                if (exitDoorLoc != null && clickedBlock.getLocation().equals(exitDoorLoc)) {
+                    if (gameManager.isExitDoorOpened()) {
+                        player.sendMessage(ChatColor.YELLOW + "出口ドアはすでに開いてるよ！");
+                        return;
+                    }
+                    if (item.getAmount() > 1) {
+                        item.setAmount(item.getAmount() - 1);
+                    } else {
+                        player.getInventory().removeItem(item);
+                    }
+                    gameManager.openExitDoor(player);
                     return;
                 }
-                if (item.getAmount() > 1) {
-                    item.setAmount(item.getAmount() - 1);
-                } else {
-                    player.getInventory().removeItem(item);
-                }
-                gameManager.openExitDoor(player);
-                return;
             }
             player.sendMessage(ChatColor.RED + "ここでは鍵を使えないよ。ドアに向かって使ってね！");
-        }
-        // ドローンアイテム
-        else if (itemManager.isDroneControllerItem(item)) {
-            event.setCancelled(true);
-            if (!gameManager.isGameRunning()) {
-                player.sendMessage(ChatColor.RED + "ゲームが開始されていないよ！");
-                return;
-            }
-            if (!teamManager.isPlayerInPlayerTeam(player)) {
-                player.sendMessage(ChatColor.RED + "プレイヤー陣営のみ使用可能だよ！");
-                return;
-            }
-            // ドローン起動
-            itemManager.startDroneMode(player);
-        }
-        // 陣営選択本
-        else if (itemManager.isTeamSelectBook(item)) {
-            event.setCancelled(true);
-            openTeamSelectionGUI(player);
         }
         // ゲームスタート本
         else if (itemManager.isGameStartBook(item)) {
@@ -599,6 +659,16 @@ public final class OniGo extends JavaPlugin implements CommandExecutor, Listener
         else if (itemManager.isGameTimeBook(item)) {
             event.setCancelled(true);
             openGameTimeGUI(player);
+        }
+        // ゲーム設定本
+        else if (itemManager.isGameSettingsBook(item)) {
+            event.setCancelled(true);
+            openGameSettingsGUI(player);
+        }
+        // 鬼タイプ選択本
+        else if (itemManager.isOniTypeSelectBook(item)) {
+            event.setCancelled(true);
+            openOniTypeSelectionGUI(player);
         }
         // 鬼叉「突進」
         else if (itemManager.isKishaDashItem(item)) {
@@ -911,27 +981,8 @@ public final class OniGo extends JavaPlugin implements CommandExecutor, Listener
 
     @EventHandler
     public void onInventoryClick(InventoryClickEvent event) {
-        // 陣営選択GUI
-        if (event.getView().getTitle().equals("陣営選択")) {
-            event.setCancelled(true);
-            if (event.getCurrentItem() == null) return;
-            Player player = (Player) event.getWhoClicked();
-            String dispName = event.getCurrentItem().getItemMeta().getDisplayName();
-            if ("プレイヤー陣営".equals(dispName)) {
-                teamManager.addPlayerToPlayerTeam(player);
-                player.sendMessage(ChatColor.BLUE + "プレイヤー陣営に配属されたよ！");
-                player.closeInventory();
-                gameManager.updateScoreboard();
-            } else             if ("鬼陣営".equals(dispName)) {
-                teamManager.addPlayerToOniTeam(player);
-                player.sendMessage(ChatColor.RED + "鬼陣営に配属されたよ！鬼タイプを選択してください");
-                player.closeInventory();
-                openOniTypeSelectionGUI(player);
-                gameManager.updateScoreboard();
-            }
-        }
         // ゲームスタートGUI
-        else if (event.getView().getTitle().equals("ゲームスタート")) {
+        if (event.getView().getTitle().equals("ゲームスタート")) {
             event.setCancelled(true);
             if (event.getCurrentItem() == null) return;
             Player player = (Player) event.getWhoClicked();
@@ -939,12 +990,13 @@ public final class OniGo extends JavaPlugin implements CommandExecutor, Listener
             if ("§2通常スタート".equals(dispName)) {
                 player.closeInventory();
                 gameManager.startGame(player);
-            } else if ("§c鬼スタート".equals(dispName)) {
-                player.closeInventory();
-                gameManager.oniStartGame(player);
             } else if ("§dランダム鬼スタート".equals(dispName)) {
                 player.closeInventory();
                 randomOniStart(player);
+            } else if ("§c特定プレイヤー鬼スタート".equals(dispName)) {
+                player.closeInventory();
+                sendConfigMessage(player, ChatColor.LIGHT_PURPLE + "鬼にしたいプレイヤー名を入力してください");
+                playerInputModes.put(player.getUniqueId(), InputMode.SPECIFIC_ONI);
             }
         }
         // チェスト数設定GUI
@@ -996,11 +1048,23 @@ public final class OniGo extends JavaPlugin implements CommandExecutor, Listener
                 playerInputModes.put(player.getUniqueId(), InputMode.GAME_TIME);
             }
         }
+        // ゲーム設定GUI
+        else if (event.getView().getTitle().equals("ゲーム設定")) {
+            event.setCancelled(true);
+            if (event.getCurrentItem() == null) return;
+            Player player = (Player) event.getWhoClicked();
+            String dispName = event.getCurrentItem().getItemMeta().getDisplayName();
+
+            // TODO: ゲーム設定の実装
+            player.closeInventory();
+            player.sendMessage(ChatColor.YELLOW + "この機能は現在開発中です。");
+        }
         // 鬼タイプ選択GUI
         else if (event.getView().getTitle().equals("鬼タイプ選択")) {
             event.setCancelled(true);
             if (event.getCurrentItem() == null) return;
             Player player = (Player) event.getWhoClicked();
+
             if (!teamManager.isPlayerInOniTeam(player)) {
                 player.sendMessage(ChatColor.RED + "鬼チームのみ選択できます");
                 player.closeInventory();
@@ -1047,6 +1111,7 @@ public final class OniGo extends JavaPlugin implements CommandExecutor, Listener
 
             OniType oniType = teamManager.getPlayerOniType(damager);
 
+            // 重要: 攻撃イベントをキャンセルして独自処理
             event.setCancelled(true);
 
             // 月牙の月切り発動チェック
@@ -1183,28 +1248,26 @@ public final class OniGo extends JavaPlugin implements CommandExecutor, Listener
                     sendConfigMessage(player, ChatColor.RED + "数字を入力してね。");
                 }
             }
+            else if (mode == InputMode.SPECIFIC_ONI) {
+                event.setCancelled(true);
+                String targetName = message;
+
+                Player targetPlayer = Bukkit.getPlayerExact(targetName);
+                if (targetPlayer == null || !targetPlayer.isOnline()) {
+                    sendConfigMessage(player, ChatColor.RED + "プレイヤー「" + targetName + "」が見つかりません。");
+                    return;
+                }
+
+                Bukkit.getScheduler().runTask(this, () -> {
+                    // 指定したプレイヤーを鬼に設定してゲーム開始
+                    gameManager.oniStartGame(targetPlayer);
+                    playerInputModes.remove(uuid);
+                });
+            }
         }
     }
 
     // GUI呼び出し系
-    private void openTeamSelectionGUI(Player player) {
-        Inventory inv = Bukkit.createInventory(null, 9, "陣営選択");
-
-        ItemStack playerItem = new ItemStack(Material.PAPER);
-        ItemMeta pMeta = playerItem.getItemMeta();
-        pMeta.setDisplayName("プレイヤー陣営");
-        playerItem.setItemMeta(pMeta);
-        inv.setItem(3, playerItem);
-
-        ItemStack oniItem = new ItemStack(Material.PAPER);
-        ItemMeta oMeta = oniItem.getItemMeta();
-        oMeta.setDisplayName("鬼陣営");
-        oniItem.setItemMeta(oMeta);
-        inv.setItem(5, oniItem);
-
-        player.openInventory(inv);
-    }
-
     private void openGameStartGUI(Player player) {
         Inventory inv = Bukkit.createInventory(null, 9, "ゲームスタート");
 
@@ -1216,21 +1279,21 @@ public final class OniGo extends JavaPlugin implements CommandExecutor, Listener
         normalStart.setItemMeta(normalMeta);
         inv.setItem(2, normalStart);
 
-        // 鬼スタート
-        ItemStack oniStart = new ItemStack(Material.RED_WOOL);
-        ItemMeta oniMeta = oniStart.getItemMeta();
-        oniMeta.setDisplayName("§c鬼スタート");
-        oniMeta.setLore(Arrays.asList("クリックした人が鬼になる", "他は自動的にプレイヤー陣営"));
-        oniStart.setItemMeta(oniMeta);
-        inv.setItem(4, oniStart);
-
         // ランダム鬼スタート
         ItemStack randomOniStart = new ItemStack(Material.PURPLE_WOOL);
         ItemMeta randomOniMeta = randomOniStart.getItemMeta();
         randomOniMeta.setDisplayName("§dランダム鬼スタート");
         randomOniMeta.setLore(Arrays.asList("ランダムで1人を鬼に選ぶ", "陣営選択なしで即開始"));
         randomOniStart.setItemMeta(randomOniMeta);
-        inv.setItem(6, randomOniStart);
+        inv.setItem(4, randomOniStart);
+
+        // 特定プレイヤー鬼スタート
+        ItemStack specificOniStart = new ItemStack(Material.RED_WOOL);
+        ItemMeta specificOniMeta = specificOniStart.getItemMeta();
+        specificOniMeta.setDisplayName("§c特定プレイヤー鬼スタート");
+        specificOniMeta.setLore(Arrays.asList("指定したプレイヤーを鬼に", "他は自動的にプレイヤー陣営"));
+        specificOniStart.setItemMeta(specificOniMeta);
+        inv.setItem(6, specificOniStart);
 
         player.openInventory(inv);
     }
@@ -1336,6 +1399,47 @@ public final class OniGo extends JavaPlugin implements CommandExecutor, Listener
         player.openInventory(inv);
     }
 
+    // ゲーム設定GUI
+    private void openGameSettingsGUI(Player player) {
+        Inventory inv = Bukkit.createInventory(null, 27, "ゲーム設定");
+
+        // 各種設定項目
+        ItemStack easyMode = new ItemStack(Material.LIME_WOOL);
+        ItemMeta easyMeta = easyMode.getItemMeta();
+        easyMeta.setDisplayName("§a簡単モード");
+        easyMeta.setLore(Arrays.asList(
+                "カウントチェスト数：1個",
+                "ゲーム時間：300秒",
+                "脱出条件：過半数脱出"
+        ));
+        easyMode.setItemMeta(easyMeta);
+        inv.setItem(10, easyMode);
+
+        ItemStack normalMode = new ItemStack(Material.YELLOW_WOOL);
+        ItemMeta normalMeta = normalMode.getItemMeta();
+        normalMeta.setDisplayName("§e標準モード");
+        normalMeta.setLore(Arrays.asList(
+                "カウントチェスト数：3個",
+                "ゲーム時間：300秒",
+                "脱出条件：過半数脱出"
+        ));
+        normalMode.setItemMeta(normalMeta);
+        inv.setItem(13, normalMode);
+
+        ItemStack hardMode = new ItemStack(Material.RED_WOOL);
+        ItemMeta hardMeta = hardMode.getItemMeta();
+        hardMeta.setDisplayName("§cハードモード");
+        hardMeta.setLore(Arrays.asList(
+                "カウントチェスト数：5個",
+                "ゲーム時間：180秒",
+                "脱出条件：過半数脱出"
+        ));
+        hardMode.setItemMeta(hardMeta);
+        inv.setItem(16, hardMode);
+
+        player.openInventory(inv);
+    }
+
     // 鬼タイプ選択GUI
     public void openOniTypeSelectionGUI(Player player) {
         Inventory inv = Bukkit.createInventory(null, 9, "鬼タイプ選択");
@@ -1387,32 +1491,6 @@ public final class OniGo extends JavaPlugin implements CommandExecutor, Listener
         player.openInventory(inv);
     }
 
-    // 鬼タイプに合わせた速度適用
-    private void applyOniTypeSpeed(Player player, OniType type) {
-        // 速度効果を一旦解除
-        player.removePotionEffect(PotionEffectType.SPEED);
-        player.removePotionEffect(PotionEffectType.getByName("SLOW"));
-
-        int speedLevel = 0;
-        switch (type) {
-            case KISHA:
-                speedLevel = 2; // 最高速度
-                break;
-            case ANSHA:
-                speedLevel = 1; // 1.2倍速
-                break;
-            case GETSUGA:
-                speedLevel = 3; // 1.5倍速
-                break;
-            default:
-                return; // YASHA は標準速度
-        }
-
-        if (speedLevel > 0) {
-            player.addPotionEffect(new PotionEffect(PotionEffectType.SPEED, 999999, speedLevel, false, false));
-        }
-    }
-
     /**
      * ランダム鬼スタート
      */
@@ -1425,30 +1503,40 @@ public final class OniGo extends JavaPlugin implements CommandExecutor, Listener
         Random random = new Random();
         Player oniPlayer = allPlayers.get(random.nextInt(allPlayers.size()));
         Bukkit.broadcastMessage(ChatColor.GOLD + "ランダムで " + oniPlayer.getName() + " が鬼に選ばれた！");
+
+        // 鬼タイプもランダムに選ぶ
+        OniType[] types = OniType.values();
+        OniType randomType = types[random.nextInt(types.length)];
+        teamManager.setPlayerOniType(oniPlayer, randomType);
+
         gameManager.oniStartGame(oniPlayer);
     }
 
-    // Helper method for GameManager to update scoreboard
-    public void updateScoreboard() {
-        if (gameManager != null) {
-            gameManager.updateScoreboard();
-        }
+    /**
+     * アイテムマネージャーを取得
+     */
+    public ItemManager getItemManager() {
+        return itemManager;
     }
 
-    // Helper method to check if game is running
-    public boolean isGameRunning() {
-        return gameManager != null && gameManager.isGameRunning();
-    }
-
+    /**
+     * コンフィグマネージャーを取得
+     */
     public ConfigManager getConfigManager() {
         return configManager;
     }
 
+    /**
+     * ゲームマネージャーを取得
+     */
     public GameManager getGameManager() {
         return gameManager;
     }
 
-    public ItemManager getItemManager() {
-        return itemManager;
+    /**
+     * ゲーム実行中かどうか
+     */
+    public boolean isGameRunning() {
+        return gameManager != null && gameManager.isGameRunning();
     }
 }
