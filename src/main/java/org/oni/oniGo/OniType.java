@@ -3,10 +3,10 @@ package org.oni.oniGo;
 import org.bukkit.ChatColor;
 
 public enum OniType {
-    YASHA("夜叉", ChatColor.RED + "通常の鬼。プレイヤーに暗闇効果を与える。", 1.0, 1),
-    KISHA("鬼叉", ChatColor.GOLD + "最高速度で歩く鬼。2回攻撃で1キル。", 1.8, 2),
-    ANSHA("闇叉", ChatColor.DARK_PURPLE + "常に暗闇効果を持つが高速な鬼。", 1.2, 1),
-    GETSUGA("月牙", ChatColor.BLUE + "チェスト探知能力を持つ鬼。5回攻撃で1キル。", 1.5, 5);
+    YASHA("夜叉", ChatColor.RED + "一撃必殺。プレイヤーに暗闇効果を与える。足はすごく遅い", 1.0, 1),
+    KISHA("鬼叉", ChatColor.GOLD + "突進を使って追い詰めることができる。夜叉と速度は一緒。2回攻撃で1キル。", 1.8, 2),
+    ANSHA("闇叉", ChatColor.DARK_PURPLE + "一撃必殺。足がそこそこ速い。自由自在にワープができる。自身に暗闇の効果。", 1.2, 1),
+    GETSUGA("月牙", ChatColor.BLUE + "探知能力を持つ鬼。最高クラスに足が速い。5回攻撃で1キル。", 1.5, 5);
 
     private final String displayName;
     private final String description;
